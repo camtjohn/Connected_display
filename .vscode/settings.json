@@ -1,0 +1,15 @@
+{
+    "idf.port": "/dev/ttyUSB0",
+    "idf.adapterTargetName": "esp32s3",
+    "idf.monitorBaudRate": "115200",
+    "idf.flashType": "UART",
+    "idf.portWin": "COM18",
+    "idf.openOcdConfigs": [
+        "board/esp32s3-bridge.cfg"
+    ],
+    "files.associations": {
+        "main.h": "c",
+        "led_driver.h": "c",
+        "wifi.h": "c"
+    }
+}
