@@ -21,7 +21,7 @@ static uint8_t Flag_need_update_display;
 // Private method prototypes
 void build_main_view(void);   
 void build_double_digit_sprite(uint8_t, uint8_t, uint8_t);
-uint8_t weather_value_changed(uint8_t*, uint8_t);
+uint8_t update_stored_value(uint8_t*, uint8_t);
 
 
 // PUBLIC METHODS
@@ -58,7 +58,7 @@ void View__Build_view(uint8_t view_num) {
 void View__Update_view_values(uint8_t api, uint8_t* payload, uint8_t payload_len) {
     // Current temp
     if(api==0) {
-        uint8_t flag_updated_val = weather_value_changed(&weather_today.current_temp, payload[0]);
+        uint8_t flag_updated_val = update_stored_value(&weather_today.current_temp, payload[0]);
         // If current temp records higher than forecast max temp, update max
         if(weather_today.current_temp > weather_today.max_temp) {
             weather_today.max_temp = weather_today.current_temp;
@@ -71,9 +71,9 @@ void View__Update_view_values(uint8_t api, uint8_t* payload, uint8_t payload_len
     } else if(api==1) {
         uint8_t flag_updated_val = false;
         // Modify variable to update display. Only toggle from false to true here. Never from true to false.
-        flag_updated_val |= weather_value_changed(&weather_today.max_temp, payload[0]);
-        flag_updated_val |= weather_value_changed(&weather_today.precip, payload[1]);
-        flag_updated_val |= weather_value_changed(&weather_today.moon, payload[2]);
+        flag_updated_val |= update_stored_value(&weather_today.max_temp, payload[0]);
+        flag_updated_val |= update_stored_value(&weather_today.precip, payload[1]);
+        flag_updated_val |= update_stored_value(&weather_today.moon, payload[2]);
         Flag_need_update_display |= flag_updated_val;
     }
 }
@@ -147,7 +147,7 @@ void build_main_view(void) {
 
 
 // Compare new val to old val. If changed, need to update view
-uint8_t weather_value_changed(uint8_t* stored_val, uint8_t new_val) {
+uint8_t update_stored_value(uint8_t* stored_val, uint8_t new_val) {
     uint8_t ret_val = 0;
     if(new_val != *stored_val) {
         *stored_val = new_val;

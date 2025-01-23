@@ -37,5 +37,6 @@ void Led_driver__Initialize(void);
 void Led_driver__Setup(void);
 void Led_driver__Update_RAM(uint16_t*, uint16_t*, uint16_t*);
 void Led_driver__Set_brightness(uint8_t);
+void Led_driver__Toggle_LED(uint8_t);
 
 #endif

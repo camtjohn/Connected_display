@@ -67,7 +67,7 @@ void Led_driver__Update_RAM(uint16_t *view_red, uint16_t *view_green, uint16_t *
     update_RAM(CS_BLUE, RAM_blue);
 }
 
-
+// Brightness 0 (on but most dim) to 15 (brightest)
 void Led_driver__Set_brightness(uint8_t level) {
     level &= 0xF;
     uint8_t pwm_duty = 0xA0 | level;    // 101X DDDD
@@ -78,6 +78,23 @@ void Led_driver__Set_brightness(uint8_t level) {
 
     start_multiple_msg(CS_BLUE, CMD_MODE, 3);
     send_command_msg(pwm_duty);
+    set_cs(CS_BLUE, CS_INACTIVE);
+}
+
+// Turn display on/off
+void Led_driver__Toggle_LED(uint8_t led_state) {
+    uint8_t cmd;
+    if(led_state) {
+        cmd = LED_ON;
+    } else {
+        cmd = LED_OFF;
+    }
+    start_multiple_msg(CS_RED, CMD_MODE, 3);
+    send_command_msg(cmd);
+    set_cs(CS_RED, CS_INACTIVE);
+
+    start_multiple_msg(CS_BLUE, CMD_MODE, 3);
+    send_command_msg(cmd);
     set_cs(CS_BLUE, CS_INACTIVE);
 }
 

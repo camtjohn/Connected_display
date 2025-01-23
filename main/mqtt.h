@@ -5,15 +5,16 @@
 extern TaskHandle_t periodicTaskHandle;
 extern uint16_t view_main[16];
 
-// fix this crap
+// This version number
+#define FW_VERSION_NUM      1
 
-#define MQTT_BROKER_URL             "mqtt://10.0.0.110"
+#define MQTT_BROKER_URL             "mqtt://10.0.0.120"
 
 // This client subscribes to these topics
-#define MQTT_TOPIC_DATA_UPDATE      "data_update_to_0"
+#define MQTT_TOPIC_DATA_UPDATE      "weather49085"
+#define MQTT_TOPIC_FW_VERSION       "version_to_0"
 // On bootup, publish msg to server in order to get recent data
-#define MQTT_TOPIC_DATA_BOOTUP      "device_bootup"
-
+#define MQTT_TOPIC_DATA_BOOTUP      "dev_bootup"
 // This client publishes to these topics (notify/update server)
 #define MQTT_TOPIC_SUB_NOTIFY       "subsribe_from_0"
 #define MQTT_TOPIC_DATA_TO_SERVER   "data_from_0"
@@ -21,7 +22,7 @@ extern uint16_t view_main[16];
 #define MAX_NUM_PAYLOAD_BYTES       3
 
 void Mqtt__Start(void);
-void Mqtt__Publish(char*, char*);
 void Mqtt__Subscribe(char*);
+void Mqtt__Bootup_msgs(char *);
 
 #endif

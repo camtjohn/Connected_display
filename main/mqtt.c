@@ -30,8 +30,11 @@
 
 // PRIVATE FUNCTION
 static void mqtt_app_start(void);
+static void mqtt_publish(char *, char *);
+void incoming_mqtt_handler(esp_mqtt_event_handle_t);
 static void update_data_view(char *);
 static uint8_t dbl_dig_str_to_int(char, char);
+void add_null_to_str(char *, char *, uint8_t);
 
 
 static const char *TAG = "MQTT_WEATHER";
@@ -88,7 +91,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         ESP_LOGI(TAG, "MQTT_EVENT_DATA");
         printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
         printf("DATA=%.*s\r\n", event->data_len, event->data);
-        update_data_view(event->data);
+        incoming_mqtt_handler(event);
         break;
     case MQTT_EVENT_ERROR:
         ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
@@ -121,8 +124,9 @@ void Mqtt__Start(void)
     mqtt_app_start();
 }
 
-void Mqtt__Publish(char *topic, char *msg) {
-    esp_mqtt_client_publish(client, topic, msg, 0, 1, 0);
+void Mqtt__Bootup_msgs(char *device_number) {
+    // Request server to publish weather data and publish current version number
+    mqtt_publish("dev_bootup", device_number);
 }
 
 void Mqtt__Subscribe(char *topic) {
@@ -132,6 +136,7 @@ void Mqtt__Subscribe(char *topic) {
 }
 
 // PRIVATE Functions
+
 static void mqtt_app_start(void)
 {
     esp_mqtt_client_config_t mqtt_cfg = {
@@ -144,8 +149,40 @@ static void mqtt_app_start(void)
     esp_mqtt_client_start(client);
 }
 
-// Handle incoming MQTT string message. 1st char=0: current weather
-//                                      1st char=1: forecast, includes max temp,precip,moon
+// Wrapper for publishing mqtt message: 
+void mqtt_publish(char *topic, char *msg) {
+    esp_mqtt_client_publish(client, topic, msg, 0, 1, 0);
+}
+
+
+// Handle incoming MQTT string message
+void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
+    char topic_str[event->topic_len + 1];
+    char data_str[event->data_len + 1];
+    add_null_to_str(topic_str, event->topic, event->topic_len);
+    add_null_to_str(data_str, event->data, event->data_len);
+    
+    if(strcmp(topic_str, MQTT_TOPIC_DATA_UPDATE)==0) {
+        update_data_view(data_str);
+    }
+    else if(strcmp(topic_str, MQTT_TOPIC_FW_VERSION)==0) {
+        // compare payload to this version. if different, get OTA
+    }
+}
+
+
+// Compare FW version number from server with this FW version
+void compare_version(char * data_str) {
+    // Version number is 1st char of str
+    uint8_t version = dbl_dig_str_to_int('0', data_str[0]);
+
+    if(version != FW_VERSION_NUM) {
+        // Run OTA get updated FW
+    }
+}
+
+// Incoming MQTT update view message. 1st char=0: current weather
+//                                    1st char=1: forecast, includes max temp,precip,moon
 void update_data_view(char * data_str) {
     // API is 1st char of str
     uint8_t api = dbl_dig_str_to_int('0', data_str[0]);
@@ -153,7 +190,6 @@ void update_data_view(char * data_str) {
     // Will send the following to view module to update values
     uint8_t payload[MAX_NUM_PAYLOAD_BYTES];
     uint8_t payload_len = 0;
-
     // Current temp (periodic through day)
     if (api == 0) {
         uint8_t temp_current = dbl_dig_str_to_int(data_str[1], data_str[2]);
@@ -185,4 +221,9 @@ uint8_t dbl_dig_str_to_int(char dig1, char dig2) {
     temp_digit[1] = dig2;
     uint8_t dbl_dig_int = (uint8_t) strtol(temp_digit, NULL, 0);
     return(dbl_dig_int);
+}
+
+void add_null_to_str(char * ret_str, char * input_str, uint8_t str_len) {
+    strncpy(ret_str, input_str, str_len);
+    ret_str[str_len] = '\0';
 }
