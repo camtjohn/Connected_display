@@ -25,28 +25,23 @@
 
 #include "mqtt.h"
 #include "view.h"
+#include "local_time.h"
 
 // PRIVATE VARIABLE
+static char Previous_message[32];
 
 // PRIVATE FUNCTION
+static void log_error_if_nonzero(const char*, int);
 static void mqtt_app_start(void);
-static void mqtt_publish(char *, char *);
 void incoming_mqtt_handler(esp_mqtt_event_handle_t);
 static void update_data_view(char *);
 static uint8_t dbl_dig_str_to_int(char, char);
 void add_null_to_str(char *, char *, uint8_t);
 
-
 static const char *TAG = "MQTT_WEATHER";
 
 static esp_mqtt_client_handle_t client;
 
-static void log_error_if_nonzero(const char *message, int error_code)
-{
-    if (error_code != 0) {
-        ESP_LOGE(TAG, "Last error %s: 0x%x", message, error_code);
-    }
-}
 
 /*
  * @brief Event handler registered to receive MQTT events
@@ -121,12 +116,14 @@ void Mqtt__Start(void)
     esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
     esp_log_level_set("outbox", ESP_LOG_VERBOSE);
 
+    strcpy(Previous_message, "0");
+
     mqtt_app_start();
 }
 
 void Mqtt__Bootup_msgs(char *device_number) {
     // Request server to publish weather data and publish current version number
-    mqtt_publish("dev_bootup", device_number);
+    Mqtt__Publish("dev_bootup", device_number);
 }
 
 void Mqtt__Subscribe(char *topic) {
@@ -135,7 +132,46 @@ void Mqtt__Subscribe(char *topic) {
 
 }
 
+void Mqtt__Publish(char *topic, char *msg) {
+    esp_mqtt_client_publish(client, topic, msg, 0, 1, 0);
+}
+
+// Insert timestamp and publish debug message
+void Mqtt__Send_debug_msg(char *msg) {
+    char time_str[8];
+    Local_Time__Get_current_time_str(time_str);
+    // combine time and message with a space between
+    // combine the first 8 chars of time_str with msg
+    char ret_msg[32];
+    for(uint8_t i_char=0; i_char<8; i_char++) {
+        if(time_str[i_char] == '\0') {
+            time_str[i_char] = ' ';
+        }
+        ret_msg[i_char] = time_str[i_char];
+    }
+    ret_msg[8] = ' ';  // add space between time and message
+    uint8_t i_msg;
+    for(uint8_t i_char=9; i_char<32; i_char++) {
+        i_msg = i_char - 9;
+        ret_msg[i_char] = msg[i_msg];
+        if(msg[i_msg] == '\0') {
+            break;
+        }
+    }
+
+    // char ret_msg[] = {time_str, ': ', msg};
+    // ESP_LOGI(TAG, ret_msg);
+    esp_mqtt_client_publish(client, "debug", ret_msg, 0, 1, 0);
+}
+
 // PRIVATE Functions
+
+void log_error_if_nonzero(const char *message, int error_code)
+{
+    if (error_code != 0) {
+        ESP_LOGE(TAG, "Last error %s: 0x%x", message, error_code);
+    }
+}
 
 static void mqtt_app_start(void)
 {
@@ -150,9 +186,6 @@ static void mqtt_app_start(void)
 }
 
 // Wrapper for publishing mqtt message: 
-void mqtt_publish(char *topic, char *msg) {
-    esp_mqtt_client_publish(client, topic, msg, 0, 1, 0);
-}
 
 
 // Handle incoming MQTT string message
@@ -162,8 +195,13 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
     add_null_to_str(topic_str, event->topic, event->topic_len);
     add_null_to_str(data_str, event->data, event->data_len);
     
+    // Topic string applies to weather view of this device
     if(strcmp(topic_str, MQTT_TOPIC_DATA_UPDATE)==0) {
-        update_data_view(data_str);
+        // Data is different from previous message, update view
+        if(strcmp(data_str, Previous_message)!= 0) {
+            update_data_view(data_str);
+            strcpy(Previous_message, data_str);
+        }
     }
     else if(strcmp(topic_str, MQTT_TOPIC_FW_VERSION)==0) {
         // compare payload to this version. if different, get OTA

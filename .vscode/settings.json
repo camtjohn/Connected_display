@@ -17,6 +17,15 @@
         "string_view": "c",
         "ranges": "c",
         "span": "c",
-        "cstring": "cpp"
+        "cstring": "cpp",
+        "view.h": "c",
+        "compare": "c",
+        "cstdint": "c",
+        "esp_log.h": "c",
+        "task.h": "c",
+        "string.h": "c",
+        "gpio.h": "c",
+        "freertos.h": "c",
+        "animation.h": "c"
     }
 }

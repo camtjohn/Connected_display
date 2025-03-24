@@ -41,8 +41,11 @@ const uint8_t sprite_symbol_heart[6] = {34, 85, 73, 34, 20, 8};   //dim: 6x7
 const uint8_t sprite_precip_line[2] = {42, 85};   //dim: 2x7
 const uint8_t sprite_max_temp_line[1] = {127};    //dim: 1x7
 
-const uint8_t sprite_almost_full_moon[4] = {6, 9, 9, 6};   //dim: 4x4
+const uint8_t sprite_almost_full_moon[4] = {6, 7, 7, 6};   //dim: 4x4
 const uint8_t sprite_full_moon[4] = {6, 15, 15, 6};    //dim: 4x4
+
+// Custom
+const uint8_t sprite_vert_line[4] = {1, 1, 1, 1};    //dim: 4x1
 
 
 // PRIVATE METHOD PROTOTYPES
@@ -142,6 +145,15 @@ void Sprite__Add_sprite(SPRITE_TYPE sprite, COLOR_TYPE color, uint8_t value, uin
             }
             break;
 
+        case CUSTOM:
+            add_sprite_generic_small(view_red, 0, 0, sprite_vert_line, 4);
+            add_sprite_generic_small(view_green, 4, 0, sprite_vert_line, 4);
+            add_sprite_generic_small(view_blue, 8, 0, sprite_vert_line, 4);
+            add_sprite_generic_small(view_red, 12, 0, sprite_vert_line, 4);
+            add_sprite_generic_small(view_green, 12, 1, sprite_vert_line, 4);
+            add_sprite_generic_small(view_blue, 12, 2, sprite_vert_line, 4);
+
+            break;
         default:
             //
             break;
@@ -175,11 +187,11 @@ void add_sprite_double_digit(uint16_t *view, uint8_t loc_row, uint8_t loc_col, u
     }
 }
 
-void add_sprite_generic_small(uint16_t *view, uint8_t loc_row, uint8_t loc_col, const uint8_t* int_arr, uint8_t num_rows) {
+void add_sprite_generic_small(uint16_t *view, uint8_t loc_row, uint8_t loc_col, const uint8_t* sprite, uint8_t num_rows) {
     // Iterate through rows of sprite, inject each row at specified coordinates
     for (uint8_t i_row=0; i_row < num_rows; i_row++) {
         uint8_t view_row = i_row + loc_row;     // Inject sprite at specified row
-        view[view_row] |= (int_arr[i_row] << loc_col);
+        view[view_row] |= (sprite[i_row] << loc_col);
     }
 }
 

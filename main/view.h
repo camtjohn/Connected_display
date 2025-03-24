@@ -14,12 +14,25 @@ typedef struct {
   uint8_t sunset;
 } weather_data;
 
+typedef enum {
+    STATIC,
+    DYNAMIC
+} Display_type;
+
+typedef enum {
+    VIEW_WEATHER,
+    VIEW_CUSTOM,
+    VIEW_ANIMATION
+} View_type;
+
 //PUBLIC FUNCTION
 void View__Initialize();
-void View__Build_view(uint8_t);
 void View__Update_view_values(uint8_t, uint8_t*, uint8_t);
-//void View__Build_view_custom(uint16_t*);
-void View__Get_views(uint16_t*, uint16_t*, uint16_t*);
+// void View__Build_view_custom(uint16_t*);
+uint8_t View__Need_update_refresh_rate(void);
+uint16_t View__Get_refresh_rate(void);
+void View__Set_view(View_type);
+void View__Update_views(void);
 
 
 #endif

@@ -13,6 +13,6 @@
 void Ui__Initialize(void);
 uint8_t Ui__Monitor_poll_btns(void);
 void Ui__Btn_action(uint8_t);
-
+void Ui__Set_display_state(uint8_t state);
 
 #endif

@@ -1,15 +1,15 @@
 #ifndef MAIN_H
 #define MAIN_H
 
-//const static char *TAG = "WEATHER_STATION";
+#include "freertos/FreeRTOS.h"
 
 // Public method
-#define MAIN_PERIOD_MS    30000   // Update view every 30sec=30000
+#define MAIN_PERIOD_MS    60000   // Update view every 60sec=60000
+#define FREQUENCY_CHECK_VIEW_UPDATES_MS     100 // check if view config changed every 100ms
 
 //TASK
 // Define the periodic interval in milliseconds
-#define TASK_PERIOD_MS (50)
-
+#define UI_TASK_PERIOD_MS (50)
 
 // Calculate the tick rate (assuming FreeRTOS tick rate is 1 kHz, i.e., 1 ms tick)
 // #define TICKS_PER_MS (configTICK_RATE_HZ / 1000)

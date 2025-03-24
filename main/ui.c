@@ -1,12 +1,33 @@
+#include "esp_log.h"
 #include "driver/gpio.h"
 
 #include "ui.h"
 #include "led_driver.h"
-#include "esp_log.h"
+#include "view.h"
 
-static const char *TAG = "UI_WEATHER";
+// static const char *TAG = "UI_WEATHER";
 
-static uint8_t Brightness;
+typedef enum {
+    LEVEL_MIN,
+    LEVEL_2,
+    LEVEL_3,
+    LEVEL_4,
+    LEVEL_5,
+    LEVEL_6,
+    LEVEL_7,
+    LEVEL_8,
+    LEVEL_9,
+    LEVEL_10,
+    LEVEL_11,
+    LEVEL_12,
+    LEVEL_13,
+    LEVEL_14,
+    LEVEL_15,
+    LEVEL_MAX
+} Brightness_level;
+
+static Brightness_level Brightness;
+static uint8_t Display_State;  // 0=off, 1=on
 uint8_t Btn_array[4] = {BTN_1, BTN_2, BTN_3, BTN_4};
 uint8_t Btn_state;  // 4th bit=BTN_4, LSB=BTN_1
 
@@ -16,7 +37,8 @@ void increase_brightness(void);
 
 // PUBLIC FUNCTIONS
 void Ui__Initialize(void) {
-    Brightness = 0x0;
+    Display_State = 1;
+    Brightness = LEVEL_MIN;
     Btn_state = 0;
     
     for(uint8_t btn=0; btn < 4; btn++) {
@@ -52,27 +74,22 @@ uint8_t Ui__Monitor_poll_btns(void) {
     return(ret_val);
 }
 
-
 // take action based on btn and view
 void Ui__Btn_action(uint8_t btn) {
     // get view
     switch(btn) {
         case 1:
-            // action btn1 pressed, will ignore other btn presses if this fires
-            // printf("btn 1\n");
+            View__Set_view(VIEW_WEATHER);  // weather
             break;
         case 2:
-            // action btn2 pressed, ignores other presses
-            // printf("btn 2\n");
+            View__Set_view(VIEW_ANIMATION);  // animation
             break;
         case 3:
             // action btn3
-            //printf("btn 3\n");
             decrease_brightness();
             break;
         case 4:
             // action btn4
-            //printf("btn 4\n");
             increase_brightness();
             break;
         default:
@@ -80,10 +97,21 @@ void Ui__Btn_action(uint8_t btn) {
     }
 }
 
+// toggle display on/off
+void Ui__Set_display_state(uint8_t state) {
+    // Request turn off. If already off, do nothing.
+    if(state == 0 && Display_State == 1) {
+        Display_State = 0;
+        Led_driver__Toggle_LED(0);
+    // Request turn on. If already on, do nothing.
+    } else if(state == 1 && Display_State == 0) {
+        Display_State = 1;
+        Led_driver__Toggle_LED(1);
+    }
+}
 
 // PRIVATE FUNCTIONS
 
-// When display off, Brightness==0xFF
 void setup_gpio_input(uint8_t pin) {
     gpio_reset_pin(pin);
     gpio_set_direction(pin, GPIO_MODE_INPUT);
@@ -91,10 +119,10 @@ void setup_gpio_input(uint8_t pin) {
 
 void decrease_brightness(void) {
     // ESP_LOGI(TAG, "Brightness: %d", Brightness);
-    if(Brightness == 0) {
-        Brightness = 0xA0;  // 0xA0 signifies off
+    if(Brightness == LEVEL_MIN) {
+        Display_State = 0;
         Led_driver__Toggle_LED(0);
-    } else if(Brightness <= 0xF) {
+    } else {
         Brightness--;
         Led_driver__Set_brightness(Brightness);
     }
@@ -103,11 +131,10 @@ void decrease_brightness(void) {
 // When display off, Brightness==0xA0
 void increase_brightness(void) {
     // ESP_LOGI(TAG, "Brightness: %d", Brightness);
-    if(Brightness == 0xA0) {
-        Brightness=0;
+    if(Display_State == 0) {
+        Display_State = 1;
         Led_driver__Toggle_LED(1);
-    }
-    else if(Brightness < 0xF) {
+    } else if(Brightness < LEVEL_MAX) {
         Brightness++;
         Led_driver__Set_brightness(Brightness);
     }

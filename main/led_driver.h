@@ -2,7 +2,7 @@
 #define LED_DISPLAY_H
 
 // To set row LEDs according to bits, either use SPI or bit bang gpio
-#define USE_SPI_BIT_BANG     1
+#define USE_SPI_BIT_BANG     0
 
 // define pins for spi protocol
 #define CS_BLUE         7
@@ -10,7 +10,7 @@
 #define DATA_PIN        9
 #define CLK_PIN         10 
 
-#define SPI_MODE        3   // Clock idle high, sample on rising edge
+#define SPI_MODE        3   // 00: Clk idle low? sample rising edge (OR) 11: Clock idle high, sample on rising edge
 #define CS_ACTIVE       0
 #define CS_INACTIVE     1
 
@@ -30,12 +30,14 @@
 #define SYS_ON          0x01    // 0000 0001  -enable system osc
 #define LED_ON          0x03    // 0000 0011  -enable LED duty
 #define LED_OFF         0x02    // 0000 0010  -disable LED duty
-#define PWM_DUTY        0xA1    // 101X DDDD  - set D to desired duty
+#define PWM_DUTY        0xA0    // 101X DDDD  - set D to desired duty
 
 
 void Led_driver__Initialize(void);
 void Led_driver__Setup(void);
 void Led_driver__Update_RAM(uint16_t*, uint16_t*, uint16_t*);
+void Led_driver__Update_RAM(uint16_t*, uint16_t*, uint16_t*);
+void Led_driver__Clear_RAM(void);
 void Led_driver__Set_brightness(uint8_t);
 void Led_driver__Toggle_LED(uint8_t);
 

@@ -22,7 +22,10 @@ extern uint16_t view_main[16];
 #define MAX_NUM_PAYLOAD_BYTES       3
 
 void Mqtt__Start(void);
-void Mqtt__Subscribe(char*);
 void Mqtt__Bootup_msgs(char *);
+void Mqtt__Subscribe(char*);
+void Mqtt__Publish(char *, char *);
+void Mqtt__Send_debug_msg(char *);
+
 
 #endif
