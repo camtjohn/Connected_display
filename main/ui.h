@@ -4,15 +4,18 @@
 #define PRESSED     1
 #define NOT_PRESSED 0
 
-// UI
+// GPIO Pin Definitions
 #define BTN_1       13
 #define BTN_2       12
 #define BTN_3       14
 #define BTN_4       15
+#define ENC_1_A     2
+#define ENC_1_B     1
+#define ENC_2_A     3
+#define ENC_2_B     4
 
 void Ui__Initialize(void);
-uint8_t Ui__Monitor_poll_btns(void);
-void Ui__Btn_action(uint8_t);
-void Ui__Set_display_state(uint8_t state);
+void Ui__Monitor_poll_btns(void);
+void Ui__Monitor_poll_encoders(void);
 
 #endif
