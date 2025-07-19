@@ -1,7 +1,7 @@
 #ifndef ANIMATION_H
 #define ANIMATION_H
 
-#define ANIMATION_MAX_FRAMES    10
+#define ANIMATION_MAX_FRAMES    2
 
 //PUBLIC TYPES
 typedef struct {

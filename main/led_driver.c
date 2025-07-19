@@ -35,13 +35,11 @@ void translate_views_to_RAM_blue(uint16_t *, uint16_t *, uint16_t *, uint16_t *)
 
 void Led_driver__Initialize(void) {
     #if USE_SPI_BIT_BANG
-    printf("Using SPI (bitbang)\n");
     configure_GPIO_output(CS_RED);
     configure_GPIO_output(CS_BLUE);
     Spi__BitBang_Setup(CLK_PIN, DATA_PIN);
 
     #else
-    printf("Using SPI (actual peripheral):\n");
     Spi_Handle_Red = Spi__Init(DATA_PIN, CLK_PIN, SPI_MODE, CS_RED);    // Unused pin 46 used for CS til incorporate CS into SPI
     Spi_Handle_Blue = Spi__Init(DATA_PIN, CLK_PIN, SPI_MODE, CS_BLUE);    // Unused pin 46 used for CS til incorporate CS into SPI
     #endif
