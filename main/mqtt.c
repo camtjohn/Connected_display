@@ -24,8 +24,8 @@
 #include "mqtt_client.h"
 
 #include "mqtt.h"
-#include "view.h"
 #include "local_time.h"
+#include "weather.h"
 
 // PRIVATE VARIABLE
 static char Previous_message[32];
@@ -34,11 +34,11 @@ static char Previous_message[32];
 static void log_error_if_nonzero(const char*, int);
 static void mqtt_app_start(void);
 void incoming_mqtt_handler(esp_mqtt_event_handle_t);
-static void update_data_view(char *);
+static void update_weather_module(char *);
 static uint8_t dbl_dig_str_to_int(char, char);
 void add_null_to_str(char *, char *, uint8_t);
 
-static const char *TAG = "MQTT_WEATHER";
+static const char *TAG = "WEATHER_STATION: MQTT";
 
 static esp_mqtt_client_handle_t client;
 
@@ -185,9 +185,6 @@ static void mqtt_app_start(void)
     esp_mqtt_client_start(client);
 }
 
-// Wrapper for publishing mqtt message: 
-
-
 // Handle incoming MQTT string message
 void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
     char topic_str[event->topic_len + 1];
@@ -197,9 +194,9 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
     
     // Topic string applies to weather view of this device
     if(strcmp(topic_str, MQTT_TOPIC_DATA_UPDATE)==0) {
-        // Data is different from previous message, update view
+        // Data is different from previous message, update stored weather data
         if(strcmp(data_str, Previous_message)!= 0) {
-            update_data_view(data_str);
+            update_weather_module(data_str);
             strcpy(Previous_message, data_str);
         }
     }
@@ -221,7 +218,7 @@ void compare_version(char * data_str) {
 
 // Incoming MQTT update view message. 1st char=0: current weather
 //                                    1st char=1: forecast, includes max temp,precip,moon
-void update_data_view(char * data_str) {
+void update_weather_module(char * data_str) {
     // API is 1st char of str
     uint8_t api = dbl_dig_str_to_int('0', data_str[0]);
 
@@ -237,19 +234,31 @@ void update_data_view(char * data_str) {
 
     // Forecast today
     else if (api == 1) {
-        // Translate string to int     
-        uint8_t temp_max = dbl_dig_str_to_int(data_str[1], data_str[2]);
-        uint8_t precip_today = dbl_dig_str_to_int(data_str[3], data_str[4]);
-        uint8_t moon_today = dbl_dig_str_to_int(data_str[5], data_str[6]);
-        
-        payload[0] = temp_max;
-        payload[1] = precip_today;
-        payload[2] = moon_today;
-        payload_len = 3;
+        // First byte=how many days forecasting
+        uint8_t num_days = (data_str[1] - '0');
+        payload[0] = num_days;
+        payload_len = 1;
+
+        uint8_t idx_data = 2;
+        uint8_t idx_payload = 1;
+        for(uint8_t day = 0; day<num_days; day++) {
+            // idx_data += (day * 5);
+            uint8_t temp_max = dbl_dig_str_to_int(data_str[idx_data], data_str[idx_data+1]);
+            uint8_t precip = dbl_dig_str_to_int(data_str[idx_data+2], data_str[idx_data+3]);
+            uint8_t moon = (data_str[idx_data+4] - '0');
+            idx_data = idx_data + 5;
+
+            // uint8_t idx_payload = ((day * 3) + 1);
+            payload[idx_payload] = temp_max;
+            payload[idx_payload+1] = precip;
+            payload[idx_payload+2] = moon;
+            idx_payload += 3;
+        }
+        payload_len = idx_payload + 1;
     }
 
     // Update display with newly receieved weather data
-    View__Update_view_values(api, payload, payload_len);
+    Weather__Update_values(api, payload, payload_len);
 }
 
 // Convert char(s) to int

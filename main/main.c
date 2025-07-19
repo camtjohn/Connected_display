@@ -7,15 +7,15 @@
 #include "esp_system.h"
 #include "soc/soc_caps.h"
 #include "esp_log.h"
-#include "driver/gpio.h"
+// #include "driver/gpio.h"
 
-#include "led_driver.h"
-#include "local_time.h"
 #include "main.h"
+#include "wifi.h"
 #include "mqtt.h"
 #include "ui.h"
+#include "led_driver.h"
 #include "view.h"
-#include "wifi.h"
+#include "local_time.h"
 
 const static char *TAG = "WEATHER_STATION: MAIN";
 
@@ -29,8 +29,10 @@ uint16_t View_green[16];
 uint16_t View_blue[16];
 
 // TASK
-TaskHandle_t periodicTaskHandle = NULL;
-void periodic_task_poll_button(void *);
+TaskHandle_t periodicTaskHandle_btn = NULL;
+void periodic_task_poll_buttons(void *);
+TaskHandle_t periodicTaskHandle_enc = NULL;
+void periodic_task_poll_encoders(void *);
 TaskHandle_t periodicTaskHandle_sleep = NULL;
 void periodic_task_sleep_wake(void *);
 
@@ -46,12 +48,11 @@ void app_main(void) {
     #if(ENABLE_WIFI_MQTT)
     Wifi__Start();
     Mqtt__Start();
+    Local_Time__Init_SNTP();
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     char * device_num = "0";
     Mqtt__Bootup_msgs(device_num);
-
-    Local_Time__Init_SNTP();
     #endif
 
     #if(ENABLE_DISPLAY) 
@@ -64,12 +65,21 @@ void app_main(void) {
 
     // TASKS
     xTaskCreate(
-        periodic_task_poll_button,      // Task function
-        "PeriodicTask_PollButton",      // Task name (for debugging)
+        periodic_task_poll_buttons,      // Task function
+        "PeriodicTask_PollButtons",      // Task name (for debugging)
         (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
         NULL,                           // Task parameter
         20,                             // Task priority
-        &periodicTaskHandle             // Task handle
+        &periodicTaskHandle_btn             // Task handle
+    );
+
+    xTaskCreate(
+        periodic_task_poll_encoders,      // Task function
+        "PeriodicTask_PollEncoders",      // Task name (for debugging)
+        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
+        NULL,                           // Task parameter
+        20,                             // Task priority
+        &periodicTaskHandle_enc             // Task handle
     );
 
     #if(ENABLE_WIFI_MQTT)
@@ -89,22 +99,25 @@ void app_main(void) {
     #endif
     // Led_driver__Clear_RAM();
 
-    // Frequent check for display type change occurs every 100ms. If not change after MAIN_PERIOD_MS, then update display anyways.
     uint16_t display_refresh_rate_ms;
     uint16_t max_count;
-    uint8_t count_check_view;
     while (1) {
-        // Check ever 100ms if view config changed refresh rate (animation). If not, update display according to current rate.
+        // Check every 100ms if need to update view
+        // If no updates occur, update display after number of counts according to refresh rate
         display_refresh_rate_ms = View__Get_refresh_rate();
         max_count = display_refresh_rate_ms / FREQUENCY_CHECK_VIEW_UPDATES_MS;
-        count_check_view = 0;
         for(uint8_t i_count = 0; i_count < max_count; i_count++) {
-            count_check_view++;
-            if(View__Need_update_refresh_rate() == 1) {
+            // Check for UI event and if need to update view
+            uint8_t view_variables = View__Get_view_variables();
+            if(view_variables & 0x1) {  // UI event
+                View__Process_UI();
+            }
+            if (view_variables & 0x2) { // Update view
                 break;
             }
             vTaskDelay(pdMS_TO_TICKS(FREQUENCY_CHECK_VIEW_UPDATES_MS));  // every 100ms
         }
+
         View__Update_views();
     }
 }
@@ -112,18 +125,28 @@ void app_main(void) {
 
 // PRIVATE METHODS
 
-// Define task: Periodically poll buttons
-void periodic_task_poll_button(void *pvParameters) {
-    // Initialize the xLastWakeTime variable with the current tick count before method runs
+// Define task: Periodically poll encoders
+void periodic_task_poll_encoders(void *pvParameters) {
     TickType_t time_start_task = xTaskGetTickCount();
     // After method runs, delay for this amount of ms
-    const TickType_t run_every_ms = pdMS_TO_TICKS(UI_TASK_PERIOD_MS);
+    const TickType_t run_every_ms = pdMS_TO_TICKS(UI_ENCODER_TASK_PERIOD_MS);
     
     while (1) {
-        uint8_t btn_states = Ui__Monitor_poll_btns();
-        Ui__Btn_action(btn_states);
-        
-        //printf("inside task...\n");
+        // encoder events:  enc1 rotate CW: set bit0, rotate CCW: set bit1
+        //                  enc2 rotate CW: set bit2, rotate CCW: set bit3
+        Ui__Monitor_poll_encoders();
+        vTaskDelayUntil(&time_start_task, run_every_ms);
+    }
+}
+
+// Define task: Periodically poll buttons
+void periodic_task_poll_buttons(void *pvParameters) {
+    TickType_t time_start_task = xTaskGetTickCount();
+    // After method runs, delay for this amount of ms
+    const TickType_t run_every_ms = pdMS_TO_TICKS(UI_BUTTON_TASK_PERIOD_MS);
+    
+    while (1) {
+        Ui__Monitor_poll_btns();
         vTaskDelayUntil(&time_start_task, run_every_ms);
     }
 }
@@ -155,12 +178,12 @@ void periodic_task_sleep_wake(void *pvParameters) {
                 #if (ENABLE_DEBUG_MODE)
                 Mqtt__Send_debug_msg("sleep");
                 #endif
-                Ui__Set_display_state(0);  // turn off display
+                View__Set_display_state(0);  // turn off display
             } else if(next_event.action == WAKEUP) {
                 #if (ENABLE_DEBUG_MODE)
                 Mqtt__Send_debug_msg("wakeup");
                 #endif
-                Ui__Set_display_state(1);  // turn on display
+                View__Set_display_state(1);  // turn on display
             }
         }
     }

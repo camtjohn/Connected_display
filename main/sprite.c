@@ -32,9 +32,20 @@ const uint8_t sprite_small_num[10][5] = { {7, 5, 5, 5, 7},
 const uint8_t sprite_up_arrow[6] = {4, 14, 21, 4, 4, 4};
 const uint8_t sprite_down_arrow[6] = {4, 4, 4, 21, 14, 4};
 
-const uint8_t sprite_letter_A[6] = {2, 5, 7, 5, 5};
-const uint8_t sprite_letter_C[6] = {3, 4, 4, 4, 3};
-const uint8_t sprite_letter_J[6] = {7, 2, 2, 10, 6};
+// const Sprite_generic sprite_letter_A = {.num_cols = 3, .num_rows = 5, .data_arr = 2, 5, 7, 5, 5};
+// const Sprite_generic sprite_letter_C = {.num_cols = 3, .num_rows = 5, .data_arr = 3, 4, 4, 4, 3};
+// const Sprite_generic sprite_letter_J = {.num_cols = 4, .num_rows = 5, .data_arr = 7, 2, 2, 10, 6};
+
+const uint8_t sprite_letter_J[5] = {7, 2, 2, 10, 6};   //dim: 5x4
+
+// Days of week
+const uint8_t sprite_letter_SU[5] = {0x70, 0x40, 0x75, 0x15, 0x77};   //dim: 5x4
+const uint8_t sprite_letter_M[5] = {0x22, 0x36, 0x2A, 0x22, 0x22};   //dim: 5x4
+const uint8_t sprite_letter_TU[5] = {0x38, 0x10, 0x15, 0x15, 0x17};   //dim: 5x4
+const uint8_t sprite_letter_W[5] = {0x22, 0x22, 0x2A, 0x36, 0x22};   //dim: 5x4
+const uint8_t sprite_letter_TH[5] = {0x74, 0x24, 0x27, 0x25, 0x25};   //dim: 5x4
+const uint8_t sprite_letter_F[5] = {0xE, 0x8, 0xC, 0x8, 0x8};       //dim: 5x4
+const uint8_t sprite_letter_SA[5] = {0x72, 0x45, 0x77, 0x15, 0x75};   //dim: 5x4
 
 const uint8_t sprite_symbol_heart[6] = {34, 85, 73, 34, 20, 8};   //dim: 6x7
 
@@ -46,6 +57,7 @@ const uint8_t sprite_full_moon[4] = {6, 15, 15, 6};    //dim: 4x4
 
 // Custom
 const uint8_t sprite_vert_line[4] = {1, 1, 1, 1};    //dim: 4x1
+
 
 
 // PRIVATE METHOD PROTOTYPES
@@ -145,6 +157,24 @@ void Sprite__Add_sprite(SPRITE_TYPE sprite, COLOR_TYPE color, uint8_t value, uin
             }
             break;
 
+        case LETTER:
+            if(value == 0) {
+                add_sprite_generic_small(view_green, 10, 0, sprite_letter_SU, 5);
+            } else if (value == 1) {
+                add_sprite_generic_small(view_green, 10, 0, sprite_letter_M, 5);
+            } else if (value == 2) {
+                add_sprite_generic_small(view_green, 10, 0, sprite_letter_TU, 5);
+            } else if (value == 3) {
+                add_sprite_generic_small(view_green, 10, 0, sprite_letter_W, 5);
+            } else if (value == 4) {
+                add_sprite_generic_small(view_green, 10, 0, sprite_letter_TH, 5);
+            } else if (value == 5) {
+                add_sprite_generic_small(view_green, 10, 0, sprite_letter_F, 5);
+            } else if (value == 6) {
+                add_sprite_generic_small(view_green, 10, 0, sprite_letter_SA, 5);
+            }
+            break;
+
         case CUSTOM:
             add_sprite_generic_small(view_red, 0, 0, sprite_vert_line, 4);
             add_sprite_generic_small(view_green, 4, 0, sprite_vert_line, 4);
@@ -152,14 +182,21 @@ void Sprite__Add_sprite(SPRITE_TYPE sprite, COLOR_TYPE color, uint8_t value, uin
             add_sprite_generic_small(view_red, 12, 0, sprite_vert_line, 4);
             add_sprite_generic_small(view_green, 12, 1, sprite_vert_line, 4);
             add_sprite_generic_small(view_blue, 12, 2, sprite_vert_line, 4);
-
             break;
+
         default:
             //
             break;
         }
 }
 
+void Sprite__Add_sprite_letter(Sprite_generic sprite, uint8_t loc_row, uint8_t loc_col, uint16_t *view) {
+    
+    for (uint8_t i_row=0; i_row < sprite.num_rows; i_row++) {
+        uint8_t view_row = i_row + loc_row;     // Inject sprite at specified row
+        view[view_row] |= (sprite.data_arr[i_row] << loc_col);
+    }
+}
 
 // PRIVATE METHODS
 
