@@ -1,3 +1,4 @@
+#include <string.h>
 #include "esp_log.h"
 #include "esp_netif_sntp.h"
 #include "esp_sntp.h"
@@ -17,16 +18,20 @@ Sleep_event_config find_assign_next_event(uint16_t);
 void assign_next_event(Sleep_event_config*, uint16_t, uint16_t);
 
 void Local_Time__Init_SNTP(void) {
-    sntp_set_sync_interval(7* 24 * 60 * 60 * 1000UL);  // 1 week
-    esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, "pool.ntp.org");
-    esp_sntp_init();
-    setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);
-    tzset();
+    // sntp_set_sync_interval(7* 24 * 60 * 60 * 1000UL);  // 1 week
+    // esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+    // esp_sntp_setservername(0, "pool.ntp.org");
+    // esp_sntp_init();
+    
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    esp_netif_sntp_init(&config);
 
     if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK) {
         ESP_LOGI(TAG, "Did not get time within 10 sec timeout. I think we're trying again...");
     }
+
+    setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);  // Set timezone to EST
+    tzset();
 }
 
 Sleep_event_config Local_Time__Get_next_sleep_event(void) {
@@ -35,7 +40,7 @@ Sleep_event_config Local_Time__Get_next_sleep_event(void) {
     struct tm timeinfo;
     time(&now);
     localtime_r(&now, &timeinfo);
-    //ESP_LOGI(TAG, "hour: %d minute: %d\n", timeinfo.tm_hour, timeinfo.tm_min);
+    // ESP_LOGI(TAG, "hour: %d minute: %d\n", timeinfo.tm_hour, timeinfo.tm_min);
     uint16_t now_minutes = (60 * timeinfo.tm_hour) + timeinfo.tm_min;
 
     Sleep_event_config next_event  = find_assign_next_event(now_minutes);
@@ -51,6 +56,34 @@ void Local_Time__Get_current_time_str(char * time_str) {
     localtime_r(&now, &timeinfo);
     // Format the date and time into a string
     strftime(time_str, 9, "%H:%M:%S", &timeinfo);
+}
+
+// Get string day of the week for today
+uint8_t Local_Time__Get_letter_day_of_week(void) {
+    uint8_t ret_val = 255;
+    time_t now;
+    struct tm timeinfo;
+    time(&now);
+    localtime_r(&now, &timeinfo);
+    char day_str[3];
+    strftime(day_str, 4, "%a", &timeinfo);
+
+    if(strcmp(day_str, "Sun")==0) {
+        ret_val = 0;
+    } else if(strcmp(day_str, "Mon")==0) {
+        ret_val = 1;
+    } else if(strcmp(day_str, "Tue")==0) {
+        ret_val = 2;
+    } else if(strcmp(day_str, "Wed")==0) {
+        ret_val = 3;
+    } else if(strcmp(day_str, "Thu")==0) {
+        ret_val = 4;
+    } else if(strcmp(day_str, "Fri")==0) {
+        ret_val = 5;
+    } else if(strcmp(day_str, "Sat")==0) {
+        ret_val = 6;
+    }
+    return ret_val;
 }
 
 // Private method definitions

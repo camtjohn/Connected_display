@@ -25,5 +25,6 @@ typedef struct {
 void Local_Time__Init_SNTP(void);
 Sleep_event_config Local_Time__Get_next_sleep_event(void);
 void Local_Time__Get_current_time_str(char *);
+uint8_t Local_Time__Get_letter_day_of_week(void);
 
 #endif
