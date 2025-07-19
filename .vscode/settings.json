@@ -26,6 +26,10 @@
         "string.h": "c",
         "gpio.h": "c",
         "freertos.h": "c",
-        "animation.h": "c"
+        "animation.h": "c",
+        "esp_random.h": "c",
+        "conway.h": "c",
+        "chrono": "c",
+        "sstream": "c"
     }
 }
