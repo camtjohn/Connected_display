@@ -1,0 +1,4 @@
+.project
+sdkconfig.old
+.vscode/
+main/.cproject
