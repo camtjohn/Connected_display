@@ -29,6 +29,7 @@
 
 // PRIVATE VARIABLE
 static char Previous_message[32];
+static uint8_t Flag_Active_Server;
 
 // PRIVATE FUNCTION
 static void log_error_if_nonzero(const char*, int);
@@ -117,7 +118,7 @@ void Mqtt__Start(void)
     esp_log_level_set("outbox", ESP_LOG_VERBOSE);
 
     strcpy(Previous_message, "0");
-
+    Flag_Active_Server = 0;
     mqtt_app_start();
 }
 
@@ -134,6 +135,14 @@ void Mqtt__Subscribe(char *topic) {
 
 void Mqtt__Publish(char *topic, char *msg) {
     esp_mqtt_client_publish(client, topic, msg, 0, 1, 0);
+}
+
+uint8_t Mqtt__Get_server_status(void) {
+    return Flag_Active_Server;
+}
+
+void Mqtt__Reset_server_status(void) {
+    Flag_Active_Server = 0;
 }
 
 // Insert timestamp and publish debug message
@@ -194,6 +203,8 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
     
     // Topic string applies to weather view of this device
     if(strcmp(topic_str, MQTT_TOPIC_DATA_UPDATE)==0) {
+        // Set flag indicates receiving communicatings from server
+        Flag_Active_Server = 1;
         // Data is different from previous message, update stored weather data
         if(strcmp(data_str, Previous_message)!= 0) {
             update_weather_module(data_str);

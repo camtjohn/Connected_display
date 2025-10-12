@@ -77,12 +77,15 @@ void Sprite__Add_sprite(SPRITE_TYPE sprite, COLOR_TYPE color, uint8_t value, uin
     switch(color) {
         case RED:
             ptr_view = view_red;
+            ptr_view2 = view_red;
             break;
         case GREEN:
             ptr_view = view_green;
+            ptr_view2 = view_green;
             break;
         case BLUE:
             ptr_view = view_blue;
+            ptr_view2 = view_blue;
             break;
         case YELLOW:
             ptr_view = view_red;
@@ -107,6 +110,7 @@ void Sprite__Add_sprite(SPRITE_TYPE sprite, COLOR_TYPE color, uint8_t value, uin
             break;
         default:
             ptr_view = view_red;
+            ptr_view2 = view_red;
             break;
     }
 

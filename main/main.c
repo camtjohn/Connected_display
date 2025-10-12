@@ -35,6 +35,8 @@ TaskHandle_t periodicTaskHandle_enc = NULL;
 void periodic_task_poll_encoders(void *);
 TaskHandle_t periodicTaskHandle_sleep = NULL;
 void periodic_task_sleep_wake(void *);
+TaskHandle_t periodicTaskHandle_server = NULL;
+void periodic_task_check_server(void *);
 
 
 // Example suspend/resume task:
@@ -45,20 +47,23 @@ void periodic_task_sleep_wake(void *);
 
 void app_main(void) {
     ESP_LOGI(TAG, "Starter up");
-    #if(ENABLE_WIFI_MQTT)
-    Wifi__Start();
-    Mqtt__Start();
-    Local_Time__Init_SNTP();
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    char * device_num = "0";
-    Mqtt__Bootup_msgs(device_num);
-    #endif
 
     #if(ENABLE_DISPLAY) 
     View__Initialize();
     Led_driver__Initialize();
     Led_driver__Setup();
+    // Create bootup screen!
+    #endif
+
+    #if(ENABLE_WIFI_MQTT)
+    Wifi__Start();
+    Mqtt__Start();
+    Local_Time__Init_SNTP();
+    // Is this delay still necessary? Why??
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    char * device_num = "0";
+    Mqtt__Bootup_msgs(device_num);
     #endif
 
     Ui__Initialize();
@@ -69,7 +74,7 @@ void app_main(void) {
         "PeriodicTask_PollButtons",      // Task name (for debugging)
         (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
         NULL,                           // Task parameter
-        20,                             // Task priority
+        10,                             // Task priority
         &periodicTaskHandle_btn             // Task handle
     );
 
@@ -78,7 +83,7 @@ void app_main(void) {
         "PeriodicTask_PollEncoders",      // Task name (for debugging)
         (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
         NULL,                           // Task parameter
-        20,                             // Task priority
+        10,                             // Task priority
         &periodicTaskHandle_enc             // Task handle
     );
 
@@ -88,8 +93,17 @@ void app_main(void) {
         "PeriodicTask_SleepWake",       // Task name (for debugging)
         (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
         NULL,                           // Task parameter
-        20,                             // Task priority
+        5,                             // Task priority
         &periodicTaskHandle_sleep       // Task handle
+    );
+
+    xTaskCreate(
+        periodic_task_check_server,       // Task function
+        "PeriodicTask_CheckServer",       // Task name (for debugging)
+        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
+        NULL,                           // Task parameter
+        5,                             // Task priority
+        &periodicTaskHandle_server       // Task handle
     );
     #endif
 
@@ -186,5 +200,24 @@ void periodic_task_sleep_wake(void *pvParameters) {
                 View__Set_display_state(1);  // turn on display
             }
         }
+    }
+}
+
+// Define task: Periodically check that server actively communicating
+// every x minutes, get status from mqtt module which sets flag when it receives an update. then reset flag.
+void periodic_task_check_server(void *pvParameters) {
+    TickType_t time_start_task = xTaskGetTickCount();
+    // After method runs, delay for this amount of ms
+    const TickType_t run_every_ms = pdMS_TO_TICKS(UI_BUTTON_TASK_PERIOD_MS);
+    
+    while (1) {
+        if(Mqtt__Get_server_status() == 1) {
+            Mqtt__Reset_server_status();
+        } else {
+            // create view for server not communicating
+            Weather__Set_view_comm_loss();
+            // also track downtime?
+        }
+        vTaskDelayUntil(&time_start_task, run_every_ms);
     }
 }

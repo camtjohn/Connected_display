@@ -8,7 +8,7 @@ extern uint16_t view_main[16];
 // This version number
 #define FW_VERSION_NUM      1
 
-#define MQTT_BROKER_URL             "mqtt://10.0.0.120"
+#define MQTT_BROKER_URL             "mqtt://10.0.0.112"
 
 // This client subscribes to these topics
 #define MQTT_TOPIC_DATA_UPDATE      "weather49085"
@@ -26,6 +26,8 @@ void Mqtt__Bootup_msgs(char *);
 void Mqtt__Subscribe(char*);
 void Mqtt__Publish(char *, char *);
 void Mqtt__Send_debug_msg(char *);
+uint8_t Mqtt__Get_server_status(void);
+void Mqtt__Reset_server_status(void);
 
 
 #endif

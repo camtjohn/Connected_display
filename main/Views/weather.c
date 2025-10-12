@@ -68,6 +68,21 @@ void Weather__Update_values(uint8_t api, uint8_t* payload, uint8_t payload_len) 
     }
 }
 
+// Update view if lose communication with server. Called from mqtt module when detect comm. loss.
+void Weather__Set_view_comm_loss(void) {
+    Weather_today.current_temp = 200;
+    Weather_today.max_temp = 200;
+    Weather_today.precip = 200;
+    Weather_today.moon = 200;
+    Weather_tomorrow.max_temp = 200;
+    Weather_tomorrow.precip = 200;
+    Weather_tomorrow.moon = 200;
+    Weather_next_day.max_temp = 200;
+    Weather_next_day.precip = 200;
+    Weather_next_day.moon = 200;
+    View__Set_if_need_update_view(VIEW_WEATHER);
+}
+
 void Weather__UI_Encoder_Top(uint8_t direction) {
     // Switch internal views (forecast days)
     if(direction == 0) {

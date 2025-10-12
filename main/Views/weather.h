@@ -25,5 +25,6 @@ void Weather__Update_values(uint8_t, uint8_t*, uint8_t);
 void Weather__UI_Encoder_Side(uint8_t);
 void Weather__UI_Encoder_Top(uint8_t);
 void Weather__UI_Button(uint8_t);
+void Weather__Set_view_comm_loss(void);
 
 #endif
