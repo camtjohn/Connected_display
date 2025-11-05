@@ -120,6 +120,7 @@ void View__Set_if_need_update_view(View_type view_updating) {
     if (view_updating == View_current_view) {
         View_config_updated = 1;
     }
+    ESP_LOGI(TAG, "weather updating view");
 }
 
 // Main calls
@@ -244,6 +245,8 @@ void View__Process_UI(void) {
     }
     
     View_config_updated = 1;    // Force update
+    ESP_LOGI(TAG, "ui updating view");
+
     UI_event = 0;
     UI_needs_processed = 0;
 }
@@ -277,6 +280,7 @@ void View__Change_brightness(uint8_t direction) {
 // Called from main
 void View__Update_views(void) {
     build_new_view();
+    ESP_LOGI(TAG, "brightness updating view");
     View_config_updated = 0;
     Led_driver__Update_RAM(View_red, View_green, View_blue);
 }
@@ -329,6 +333,7 @@ void build_new_view(void) {
         break;
     }
 
+    ESP_LOGI(TAG, "build new view updating view");
     View_config_updated = 1;    // Force update
 }
 

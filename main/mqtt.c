@@ -43,6 +43,12 @@ static const char *TAG = "WEATHER_STATION: MQTT";
 
 static esp_mqtt_client_handle_t client;
 
+extern const uint8_t ca_crt_start[] asm("_binary_ca_crt_start");
+extern const uint8_t ca_crt_end[]   asm("_binary_ca_crt_end");
+extern const uint8_t client_crt_start[] asm("_binary_device002_crt_start");
+extern const uint8_t client_crt_end[]   asm("_binary_device002_crt_end");
+extern const uint8_t client_key_start[] asm("_binary_device002_key_start");
+extern const uint8_t client_key_end[]   asm("_binary_device002_key_end");
 
 /*
  * @brief Event handler registered to receive MQTT events
@@ -186,6 +192,9 @@ static void mqtt_app_start(void)
 {
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = MQTT_BROKER_URL,
+        // .broker.verification.certificate = (const char *)ca_crt_start,
+        // .credentials.authentication.certificate = (const char *)client_crt_start,
+        // .credentials.authentication.key = (const char *)client_key_start,
     };
 
     client = esp_mqtt_client_init(&mqtt_cfg);

@@ -44,15 +44,17 @@ void Weather__Update_values(uint8_t api, uint8_t* payload, uint8_t payload_len) 
             Weather_today.max_temp = Weather_today.current_temp;
             update_view = 1;    // could be current temp just received did not update, but need update max
         }
+        ESP_LOGI(TAG, "current temp: %d", Weather_today.current_temp);
+
 
     // Forecast
     } else if(api==1) {
         update_view = update_stored_value(&Weather_today.max_temp, payload[1]);
         update_view |= update_stored_value(&Weather_today.precip, payload[2]);
         update_view |= update_stored_value(&Weather_today.moon, payload[3]);
-        // ESP_LOGI(TAG, "max temp: %d", Weather_today.max_temp);
-        // ESP_LOGI(TAG, "precip: %d", Weather_today.precip);
-        // ESP_LOGI(TAG, "moon: %d", Weather_today.moon);
+        ESP_LOGI(TAG, "max temp: %d", Weather_today.max_temp);
+        ESP_LOGI(TAG, "precip: %d", Weather_today.precip);
+        ESP_LOGI(TAG, "moon: %d", Weather_today.moon);
 
         update_view |= update_stored_value(&Weather_tomorrow.max_temp, payload[4]);
         update_view |= update_stored_value(&Weather_tomorrow.precip, payload[5]);

@@ -8,7 +8,9 @@ extern uint16_t view_main[16];
 // This version number
 #define FW_VERSION_NUM      1
 
-#define MQTT_BROKER_URL             "mqtt://10.0.0.112"
+// #define MQTT_BROKER_URL             "mqtt://192.168.0.112"
+// #define MQTT_BROKER_URL             "mqtt://jbar.dev"
+#define MQTT_BROKER_URL             "mqtts://jbar.dev:8883"
 
 // This client subscribes to these topics
 #define MQTT_TOPIC_DATA_UPDATE      "weather49085"

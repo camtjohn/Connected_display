@@ -10,7 +10,8 @@
 // Define the periodic interval in milliseconds
 #define UI_BUTTON_TASK_PERIOD_MS (50)
 #define UI_ENCODER_TASK_PERIOD_MS (20)
-#define MQTT_CHECK_SERVER_STATUS (2*60*60*1000) // every 2 hours = 2hr*60min*60sec*1000ms
+#define CHECK_SERVER_PERIOD_MS (2*60*60*1000) // every 2 hours = 2hr*60min*60sec*1000ms
+#define CHECK_UNRESPONSIVE_SERVER_PERIOD_MS (20*60*1000) // every 20 min = 20*60sec*1000ms
 
 // Calculate the tick rate (assuming FreeRTOS tick rate is 1 kHz, i.e., 1 ms tick)
 // #define TICKS_PER_MS (configTICK_RATE_HZ / 1000)

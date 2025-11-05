@@ -16,6 +16,7 @@ idf_component_register(
 	"Views/conway.c"
 	"Views/weather.c"
 	"Views/etchsketch.c"
+  EMBED_TXTFILES "device002.crt" "device002.key" "ca.crt"
                     
 	INCLUDE_DIRS
 	"."

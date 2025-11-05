@@ -15,7 +15,11 @@
 #include "ui.h"
 #include "led_driver.h"
 #include "view.h"
+#include "weather.h"
 #include "local_time.h"
+
+#include "esp_tls.h"
+
 
 const static char *TAG = "WEATHER_STATION: MAIN";
 
@@ -46,6 +50,8 @@ void periodic_task_check_server(void *);
 // PRIVATE METHODS
 
 void app_main(void) {
+    esp_log_level_set("esp-tls", ESP_LOG_VERBOSE);
+    esp_log_level_set("mbedtls", ESP_LOG_VERBOSE);
     ESP_LOGI(TAG, "Starter up");
 
     #if(ENABLE_DISPLAY) 
@@ -56,9 +62,9 @@ void app_main(void) {
     #endif
 
     #if(ENABLE_WIFI_MQTT)
+    Local_Time__Init_SNTP();
     Wifi__Start();
     Mqtt__Start();
-    Local_Time__Init_SNTP();
     // Is this delay still necessary? Why??
     vTaskDelay(pdMS_TO_TICKS(3000));
 
@@ -118,7 +124,7 @@ void app_main(void) {
     while (1) {
         // Check every 100ms if need to update view
         // If no updates occur, update display after number of counts according to refresh rate
-        display_refresh_rate_ms = View__Get_refresh_rate();
+        display_refresh_rate_ms = View__Get_refresh_rate();     // default = 1 min
         max_count = display_refresh_rate_ms / FREQUENCY_CHECK_VIEW_UPDATES_MS;
         for(uint8_t i_count = 0; i_count < max_count; i_count++) {
             // Check for UI event and if need to update view
@@ -141,11 +147,11 @@ void app_main(void) {
 
 // Define task: Periodically poll encoders
 void periodic_task_poll_encoders(void *pvParameters) {
-    TickType_t time_start_task = xTaskGetTickCount();
     // After method runs, delay for this amount of ms
     const TickType_t run_every_ms = pdMS_TO_TICKS(UI_ENCODER_TASK_PERIOD_MS);
     
     while (1) {
+        TickType_t time_start_task = xTaskGetTickCount();
         // encoder events:  enc1 rotate CW: set bit0, rotate CCW: set bit1
         //                  enc2 rotate CW: set bit2, rotate CCW: set bit3
         Ui__Monitor_poll_encoders();
@@ -155,11 +161,11 @@ void periodic_task_poll_encoders(void *pvParameters) {
 
 // Define task: Periodically poll buttons
 void periodic_task_poll_buttons(void *pvParameters) {
-    TickType_t time_start_task = xTaskGetTickCount();
     // After method runs, delay for this amount of ms
     const TickType_t run_every_ms = pdMS_TO_TICKS(UI_BUTTON_TASK_PERIOD_MS);
     
     while (1) {
+        TickType_t time_start_task = xTaskGetTickCount();
         Ui__Monitor_poll_btns();
         vTaskDelayUntil(&time_start_task, run_every_ms);
     }
@@ -206,18 +212,23 @@ void periodic_task_sleep_wake(void *pvParameters) {
 // Define task: Periodically check that server actively communicating
 // every x minutes, get status from mqtt module which sets flag when it receives an update. then reset flag.
 void periodic_task_check_server(void *pvParameters) {
-    TickType_t time_start_task = xTaskGetTickCount();
     // After method runs, delay for this amount of ms
-    const TickType_t run_every_ms = pdMS_TO_TICKS(UI_BUTTON_TASK_PERIOD_MS);
+    const TickType_t active_server_check_every_ms = pdMS_TO_TICKS(CHECK_SERVER_PERIOD_MS);
+    const TickType_t unresponsive_server_check_every_ms = pdMS_TO_TICKS(CHECK_UNRESPONSIVE_SERVER_PERIOD_MS);
     
     while (1) {
+        TickType_t time_start_task = xTaskGetTickCount();
         if(Mqtt__Get_server_status() == 1) {
             Mqtt__Reset_server_status();
+            vTaskDelayUntil(&time_start_task, active_server_check_every_ms);
+
         } else {
             // create view for server not communicating
             Weather__Set_view_comm_loss();
             // also track downtime?
+
+            vTaskDelayUntil(&time_start_task, unresponsive_server_check_every_ms);
         }
-        vTaskDelayUntil(&time_start_task, run_every_ms);
+        
     }
 }
