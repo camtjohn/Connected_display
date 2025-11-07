@@ -2,6 +2,7 @@ idf_component_register(
 	SRCS 
 	"led_driver.c"
 	"animation.c"
+	"event_system.c"
 	"http_rest.c"
 	"local_time.c"
 	"main.c"
@@ -16,10 +17,11 @@ idf_component_register(
 	"Views/conway.c"
 	"Views/weather.c"
 	"Views/etchsketch.c"
-  EMBED_TXTFILES "device002.crt" "device002.key" "ca.crt"
+	EMBED_TXTFILES "device002.crt" "device002.key" "ca.crt"
                     
 	INCLUDE_DIRS
-	"."
-	"Views"
+	"Include"
+	"Views/Include"
+	"TLS_Keys"
 	)
 target_compile_options(${COMPONENT_LIB} PRIVATE "-Wno-format")

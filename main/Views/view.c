@@ -7,9 +7,12 @@
 #include <stdbool.h>
 #include "esp_system.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include "view.h"
 #include "main.h"
+#include "event_system.h"
 #include "sprite.h"
 #include "animation.h"
 #include "led_driver.h"
@@ -358,5 +361,18 @@ void increase_brightness(void) {
         Brightness++;
         Led_driver__Set_brightness(Brightness);
     }
+}
+
+// Signal display update task to refresh the display
+void View__Signal_display_update(void) {
+    extern SemaphoreHandle_t displayUpdateSemaphore;
+    if (displayUpdateSemaphore != NULL) {
+        xSemaphoreGive(displayUpdateSemaphore);
+    }
+}
+
+// Post view-related events to the event system
+void View__Post_event(event_type_t type, uint32_t data) {
+    EventSystem_PostEvent(type, data, NULL);
 }
 

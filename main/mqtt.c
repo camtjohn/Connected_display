@@ -26,6 +26,7 @@
 #include "mqtt.h"
 #include "local_time.h"
 #include "weather.h"
+#include "main.h"
 
 // PRIVATE VARIABLE
 static char Previous_message[32];
@@ -73,9 +74,13 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         //ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
         msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_DATA_UPDATE, 0);
         ESP_LOGI(TAG, "Subscribed successful, msg_id=%d", msg_id);
+        // Post MQTT connected event
+        EventSystem_PostEvent(EVENT_MQTT_CONNECTED, 0, NULL);
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+        // Post MQTT disconnected event
+        EventSystem_PostEvent(EVENT_MQTT_DISCONNECTED, 0, NULL);
         break;
     case MQTT_EVENT_SUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
@@ -218,6 +223,8 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
         if(strcmp(data_str, Previous_message)!= 0) {
             update_weather_module(data_str);
             strcpy(Previous_message, data_str);
+            // Post event to trigger display update
+            EventSystem_PostEvent(EVENT_MQTT_DATA_RECEIVED, 0, NULL);
         }
     }
     else if(strcmp(topic_str, MQTT_TOPIC_FW_VERSION)==0) {

@@ -4,12 +4,16 @@
 #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "freertos/queue.h"
+#include "freertos/timers.h"
 #include "esp_system.h"
 #include "soc/soc_caps.h"
 #include "esp_log.h"
 // #include "driver/gpio.h"
 
 #include "main.h"
+#include "event_system.h"
 #include "wifi.h"
 #include "mqtt.h"
 #include "ui.h"
@@ -41,6 +45,9 @@ TaskHandle_t periodicTaskHandle_sleep = NULL;
 void periodic_task_sleep_wake(void *);
 TaskHandle_t periodicTaskHandle_server = NULL;
 void periodic_task_check_server(void *);
+TaskHandle_t blockingTaskHandle_display = NULL;
+void blocking_task_update_display(void *);
+
 
 
 // Example suspend/resume task:
@@ -73,6 +80,9 @@ void app_main(void) {
     #endif
 
     Ui__Initialize();
+
+    // Initialize Event System
+    EventSystem_Initialize();
 
     // TASKS
     xTaskCreate(
@@ -113,60 +123,87 @@ void app_main(void) {
     );
     #endif
 
-    // MAIN LOOP
+    #if(ENABLE_DISPLAY) 
+    xTaskCreate(
+        blocking_task_update_display,       // Task function
+        "BlockingTask_UpdateDisplay",       // Task name (for debugging)
+        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
+        NULL,                           // Task parameter
+        8,                             // Task priority
+        &blockingTaskHandle_display       // Task handle
+    );
+    #endif
+
+    // Start Event System tasks and timers
+    EventSystem_StartTasks();
+
+    // MAIN LOOP - Now simplified, just handles system-level operations
     #if (ENABLE_DEBUG_MODE)
     Mqtt__Send_debug_msg("Start up...");
     #endif
-    // Led_driver__Clear_RAM();
 
-    uint16_t display_refresh_rate_ms;
-    uint16_t max_count;
+    // Main loop just sleeps - all work is done in tasks and event handlers
     while (1) {
-        // Check every 100ms if need to update view
-        // If no updates occur, update display after number of counts according to refresh rate
-        display_refresh_rate_ms = View__Get_refresh_rate();     // default = 1 min
-        max_count = display_refresh_rate_ms / FREQUENCY_CHECK_VIEW_UPDATES_MS;
-        for(uint8_t i_count = 0; i_count < max_count; i_count++) {
-            // Check for UI event and if need to update view
-            uint8_t view_variables = View__Get_view_variables();
-            if(view_variables & 0x1) {  // UI event
-                View__Process_UI();
-            }
-            if (view_variables & 0x2) { // Update view
-                break;
-            }
-            vTaskDelay(pdMS_TO_TICKS(FREQUENCY_CHECK_VIEW_UPDATES_MS));  // every 100ms
-        }
-
-        View__Update_views();
+        // Could add system health monitoring, watchdog feeding, etc. here
+        vTaskDelay(pdMS_TO_TICKS(10000));  // Sleep 10 seconds
     }
 }
 
 
 // PRIVATE METHODS
 
-// Define task: Periodically poll encoders
+// Define task: Periodically poll encoders (now posts events instead of direct processing)
 void periodic_task_poll_encoders(void *pvParameters) {
     // After method runs, delay for this amount of ms
     const TickType_t run_every_ms = pdMS_TO_TICKS(UI_ENCODER_TASK_PERIOD_MS);
     
     while (1) {
         TickType_t time_start_task = xTaskGetTickCount();
+        
+        // Poll encoders and post events for any rotation
         // encoder events:  enc1 rotate CW: set bit0, rotate CCW: set bit1
         //                  enc2 rotate CW: set bit2, rotate CCW: set bit3
-        Ui__Monitor_poll_encoders();
+        uint8_t encoder_events = Ui__Monitor_poll_encoders_get_state();
+        
+        // Check encoder 1 (using correct bit positions from UI module)
+        if (encoder_events & 0x10) {  // Enc1 CW (bit 4)
+            EventSystem_PostEvent(EVENT_UI_ENCODER_CW, 0, NULL);  // Encoder 0
+        }
+        if (encoder_events & 0x20) {  // Enc1 CCW (bit 5)
+            EventSystem_PostEvent(EVENT_UI_ENCODER_CCW, 0, NULL);  // Encoder 0
+        }
+        
+        // Check encoder 2
+        if (encoder_events & 0x40) {  // Enc2 CW (bit 6)
+            EventSystem_PostEvent(EVENT_UI_ENCODER_CW, 1, NULL);  // Encoder 1
+        }
+        if (encoder_events & 0x80) {  // Enc2 CCW (bit 7)
+            EventSystem_PostEvent(EVENT_UI_ENCODER_CCW, 1, NULL);  // Encoder 1
+        }
+        
         vTaskDelayUntil(&time_start_task, run_every_ms);
     }
 }
 
-// Define task: Periodically poll buttons
+// Define task: Periodically poll buttons (now posts events instead of direct processing)
 void periodic_task_poll_buttons(void *pvParameters) {
     // After method runs, delay for this amount of ms
     const TickType_t run_every_ms = pdMS_TO_TICKS(UI_BUTTON_TASK_PERIOD_MS);
     
     while (1) {
         TickType_t time_start_task = xTaskGetTickCount();
-        Ui__Monitor_poll_btns();
+        
+        // Poll buttons and post events for any pressed buttons
+        // Note: This would ideally be replaced with interrupt-driven GPIO handling
+        uint8_t button_states = Ui__Monitor_poll_btns_get_state();
+        
+        // Check each button and post events for pressed ones
+        for (int i = 0; i < 4; i++) {  // Assuming 4 buttons
+            if (button_states & (1 << i)) {
+                EventSystem_PostEvent(EVENT_UI_BUTTON_PRESS, i, NULL);
+            }
+        }
+        
         vTaskDelayUntil(&time_start_task, run_every_ms);
     }
 }
@@ -232,3 +269,16 @@ void periodic_task_check_server(void *pvParameters) {
         
     }
 }
+
+// Define task: Update display, wait for binary semaphore from view module when need to update
+void blocking_task_update_display(void *pvParameters) {
+    while (1) {
+        // Wait indefinitely for semaphore signal
+        if (xSemaphoreTake(displayUpdateSemaphore, portMAX_DELAY) == pdTRUE) {
+            // Semaphore received, update the display
+            ESP_LOGI(TAG, "Display update task triggered");
+            View__Update_views();
+        }
+    }
+}
+

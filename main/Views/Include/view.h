@@ -1,6 +1,8 @@
 #ifndef VIEW_H
 #define VIEW_H
 
+#include "event_system.h"  // For event_type_t
+
 #define NUM_VALUES_WEATHER_TODAY  4   // max_temp, precip_percent, moon phase
 #define NUM_SPRITES_MAIN_VIEW     6   // max_temp, current_temp, precip, moon, diag_line, straight_line
 
@@ -45,6 +47,8 @@ void View__Set_display_state(uint8_t state);
 
 void View__Update_views(void);
 void View__Change_brightness(uint8_t);
+void View__Signal_display_update(void);
+void View__Post_event(event_type_t type, uint32_t data);
 // void View__Change_view(uint8_t);
 
 

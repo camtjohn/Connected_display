@@ -2,8 +2,9 @@
 #define MAIN_H
 
 #include "freertos/FreeRTOS.h"
+#include "event_system.h"
 
-// Public method
+// Legacy defines (to be phased out)
 #define FREQUENCY_CHECK_VIEW_UPDATES_MS     100 // check if view config changed every 100ms
 
 //TASK

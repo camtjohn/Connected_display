@@ -98,6 +98,60 @@ void Ui__Monitor_poll_encoders(void) {
 }
 
 
+// New event-driven functions that return state without directly processing
+uint8_t Ui__Monitor_poll_btns_get_state(void) {
+    uint8_t btn_events = 0;
+
+    // If press btn, latch and do something. Only unlatch if detect no press.
+    for(uint8_t btn=0; btn < 4; btn++) {
+        uint8_t btn_num = Btn_array[btn];
+        uint8_t prev_state = (Btn_state >> btn) & 1;
+        uint8_t curr_state = gpio_get_level(btn_num);
+
+        if(prev_state == NOT_PRESSED) {
+            if(curr_state == PRESSED) {
+                Btn_state |= (1 << btn);
+                btn_events |= (1 << btn);
+            }
+        } else {        // previously btn pressed
+            if(curr_state == NOT_PRESSED) {
+                Btn_state &= ~(1 << btn);   // reset state to unpressed
+            }
+        }
+    }
+
+    return btn_events;
+}
+
+uint8_t Ui__Monitor_poll_encoders_get_state(void) {
+    uint8_t enc_events = 0;
+    uint8_t curr_encoder_states = 0;
+    for(uint8_t enc=0; enc < 4; enc++) {
+        curr_encoder_states |= (gpio_get_level(Enc_array[enc]) << enc);
+    }
+
+    if (curr_encoder_states != Prev_encoder_states) {   // an encoder moved, not necessarily full event
+        // enc 1
+        if ((curr_encoder_states & 3) == 3) {   // current state at detent
+            if ((Prev_encoder_states & 3) == 1) {
+                enc_events |= 0x10;     // enc1 CW
+            } else if ((Prev_encoder_states & 3) == 2) {
+                enc_events |= 0x20;     // enc1 CCW
+            }
+        }
+        // enc 2
+        if ((curr_encoder_states >> 2) == 3) {   // current state at detent
+            if ((Prev_encoder_states >> 2) == 1) {
+                enc_events |= 0x40;     // enc2 CW
+            } else if ((Prev_encoder_states >> 2) == 2) {
+                enc_events |= 0x80;     // enc2 CCW
+            }
+        }
+    }
+    Prev_encoder_states = curr_encoder_states;
+    return enc_events;
+}
+
 // PRIVATE FUNCTIONS
 
 void setup_gpio_input(uint8_t pin) {
