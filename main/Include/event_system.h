@@ -9,15 +9,8 @@
 // Event System Types
 typedef enum {
     EVENT_UI_BUTTON_PRESS,
-    EVENT_UI_ENCODER_CW,
-    EVENT_UI_ENCODER_CCW,
+    EVENT_UI_ENCODER,
     EVENT_MQTT_DATA_RECEIVED,
-    EVENT_MQTT_CONNECTED,
-    EVENT_MQTT_DISCONNECTED,
-    EVENT_TIMER_DISPLAY_REFRESH,
-    EVENT_WIFI_CONNECTED,
-    EVENT_WIFI_DISCONNECTED,
-    EVENT_VIEW_CHANGE_REQUEST,
     EVENT_BRIGHTNESS_CHANGE,
     EVENT_SYSTEM_SLEEP,
     EVENT_SYSTEM_WAKEUP
@@ -37,7 +30,6 @@ typedef struct {
 // Public variables - handles managed by event system
 extern QueueHandle_t systemEventQueue;
 extern SemaphoreHandle_t displayUpdateSemaphore;
-extern TimerHandle_t displayRefreshTimer;
 
 // Public functions
 void EventSystem_Initialize(void);
@@ -46,6 +38,5 @@ void EventSystem_StartTasks(void);
 
 // Task functions (can be called by main if needed)
 void event_dispatcher_task(void *pvParameters);
-void displayRefreshTimerCallback(TimerHandle_t xTimer);
 
 #endif // EVENT_SYSTEM_H

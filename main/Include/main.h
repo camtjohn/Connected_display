@@ -4,9 +4,6 @@
 #include "freertos/FreeRTOS.h"
 #include "event_system.h"
 
-// Legacy defines (to be phased out)
-#define FREQUENCY_CHECK_VIEW_UPDATES_MS     100 // check if view config changed every 100ms
-
 //TASK
 // Define the periodic interval in milliseconds
 #define UI_BUTTON_TASK_PERIOD_MS (50)

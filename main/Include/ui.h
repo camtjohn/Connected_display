@@ -15,9 +15,5 @@
 #define ENC_2_B     4
 
 void Ui__Initialize(void);
-void Ui__Monitor_poll_btns(void);
-void Ui__Monitor_poll_encoders(void);
-uint8_t Ui__Monitor_poll_btns_get_state(void);
-uint8_t Ui__Monitor_poll_encoders_get_state(void);
 
 #endif

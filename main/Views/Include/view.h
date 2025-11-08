@@ -8,6 +8,19 @@
 
 #define DEFAULT_REFRESH_RATE_MS    60000   // Update view every 60sec=60000
 
+SemaphoreHandle_t displayUpdateSemaphore = NULL;
+
+// Event System Types
+// Forward declared. Manually update if neededEvent System Types
+typedef enum {
+    EVENT_UI_BUTTON_PRESS,
+    EVENT_UI_ENCODER,
+    EVENT_MQTT_DATA_RECEIVED,
+    EVENT_BRIGHTNESS_CHANGE,
+    EVENT_SYSTEM_SLEEP,
+    EVENT_SYSTEM_WAKEUP
+} event_type_t;
+
 //PUBLIC TYPES
 
 typedef enum {
@@ -37,19 +50,7 @@ typedef enum {
 
 //PUBLIC FUNCTION
 void View__Initialize();
-
-uint8_t View__Get_view_variables(void);
-void View__Set_if_need_update_view(View_type);
-uint16_t View__Get_refresh_rate(void);
-void View__Set_UI_event(uint8_t);
-void View__Process_UI(void);
+void View__Process_UI(uint8_t);
 void View__Set_display_state(uint8_t state);
-
-void View__Update_views(void);
 void View__Change_brightness(uint8_t);
-void View__Signal_display_update(void);
-void View__Post_event(event_type_t type, uint32_t data);
-// void View__Change_view(uint8_t);
-
-
 #endif

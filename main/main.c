@@ -24,7 +24,6 @@
 
 #include "esp_tls.h"
 
-
 const static char *TAG = "WEATHER_STATION: MAIN";
 
 #define ENABLE_DISPLAY      1
@@ -37,24 +36,14 @@ uint16_t View_green[16];
 uint16_t View_blue[16];
 
 // TASK
-TaskHandle_t periodicTaskHandle_btn = NULL;
-void periodic_task_poll_buttons(void *);
-TaskHandle_t periodicTaskHandle_enc = NULL;
-void periodic_task_poll_encoders(void *);
 TaskHandle_t periodicTaskHandle_sleep = NULL;
 void periodic_task_sleep_wake(void *);
 TaskHandle_t periodicTaskHandle_server = NULL;
 void periodic_task_check_server(void *);
-TaskHandle_t blockingTaskHandle_display = NULL;
-void blocking_task_update_display(void *);
-
-
 
 // Example suspend/resume task:
 // vTaskSuspend(periodicTaskHandle);
 // vTaskResume(periodicTaskHandle);
-
-// PRIVATE METHODS
 
 void app_main(void) {
     esp_log_level_set("esp-tls", ESP_LOG_VERBOSE);
@@ -85,62 +74,28 @@ void app_main(void) {
     EventSystem_Initialize();
 
     // TASKS
-    xTaskCreate(
-        periodic_task_poll_buttons,      // Task function
-        "PeriodicTask_PollButtons",      // Task name (for debugging)
-        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
-        NULL,                           // Task parameter
-        10,                             // Task priority
-        &periodicTaskHandle_btn             // Task handle
-    );
-
-    xTaskCreate(
-        periodic_task_poll_encoders,      // Task function
-        "PeriodicTask_PollEncoders",      // Task name (for debugging)
-        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
-        NULL,                           // Task parameter
-        10,                             // Task priority
-        &periodicTaskHandle_enc             // Task handle
-    );
-
     #if(ENABLE_WIFI_MQTT)
     xTaskCreate(
         periodic_task_sleep_wake,       // Task function
         "PeriodicTask_SleepWake",       // Task name (for debugging)
         (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
         NULL,                           // Task parameter
-        5,                             // Task priority
+        5,                              // Task priority
         &periodicTaskHandle_sleep       // Task handle
     );
 
     xTaskCreate(
-        periodic_task_check_server,       // Task function
-        "PeriodicTask_CheckServer",       // Task name (for debugging)
+        periodic_task_check_server,     // Task function
+        "PeriodicTask_CheckServer",     // Task name (for debugging)
         (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
         NULL,                           // Task parameter
-        5,                             // Task priority
-        &periodicTaskHandle_server       // Task handle
-    );
-    #endif
-
-    #if(ENABLE_DISPLAY) 
-    xTaskCreate(
-        blocking_task_update_display,       // Task function
-        "BlockingTask_UpdateDisplay",       // Task name (for debugging)
-        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
-        NULL,                           // Task parameter
-        8,                             // Task priority
-        &blockingTaskHandle_display       // Task handle
+        5,                              // Task priority
+        &periodicTaskHandle_server      // Task handle
     );
     #endif
 
     // Start Event System tasks and timers
     EventSystem_StartTasks();
-
-    // MAIN LOOP - Now simplified, just handles system-level operations
-    #if (ENABLE_DEBUG_MODE)
-    Mqtt__Send_debug_msg("Start up...");
-    #endif
 
     // Main loop just sleeps - all work is done in tasks and event handlers
     while (1) {
@@ -149,64 +104,7 @@ void app_main(void) {
     }
 }
 
-
 // PRIVATE METHODS
-
-// Define task: Periodically poll encoders (now posts events instead of direct processing)
-void periodic_task_poll_encoders(void *pvParameters) {
-    // After method runs, delay for this amount of ms
-    const TickType_t run_every_ms = pdMS_TO_TICKS(UI_ENCODER_TASK_PERIOD_MS);
-    
-    while (1) {
-        TickType_t time_start_task = xTaskGetTickCount();
-        
-        // Poll encoders and post events for any rotation
-        // encoder events:  enc1 rotate CW: set bit0, rotate CCW: set bit1
-        //                  enc2 rotate CW: set bit2, rotate CCW: set bit3
-        uint8_t encoder_events = Ui__Monitor_poll_encoders_get_state();
-        
-        // Check encoder 1 (using correct bit positions from UI module)
-        if (encoder_events & 0x10) {  // Enc1 CW (bit 4)
-            EventSystem_PostEvent(EVENT_UI_ENCODER_CW, 0, NULL);  // Encoder 0
-        }
-        if (encoder_events & 0x20) {  // Enc1 CCW (bit 5)
-            EventSystem_PostEvent(EVENT_UI_ENCODER_CCW, 0, NULL);  // Encoder 0
-        }
-        
-        // Check encoder 2
-        if (encoder_events & 0x40) {  // Enc2 CW (bit 6)
-            EventSystem_PostEvent(EVENT_UI_ENCODER_CW, 1, NULL);  // Encoder 1
-        }
-        if (encoder_events & 0x80) {  // Enc2 CCW (bit 7)
-            EventSystem_PostEvent(EVENT_UI_ENCODER_CCW, 1, NULL);  // Encoder 1
-        }
-        
-        vTaskDelayUntil(&time_start_task, run_every_ms);
-    }
-}
-
-// Define task: Periodically poll buttons (now posts events instead of direct processing)
-void periodic_task_poll_buttons(void *pvParameters) {
-    // After method runs, delay for this amount of ms
-    const TickType_t run_every_ms = pdMS_TO_TICKS(UI_BUTTON_TASK_PERIOD_MS);
-    
-    while (1) {
-        TickType_t time_start_task = xTaskGetTickCount();
-        
-        // Poll buttons and post events for any pressed buttons
-        // Note: This would ideally be replaced with interrupt-driven GPIO handling
-        uint8_t button_states = Ui__Monitor_poll_btns_get_state();
-        
-        // Check each button and post events for pressed ones
-        for (int i = 0; i < 4; i++) {  // Assuming 4 buttons
-            if (button_states & (1 << i)) {
-                EventSystem_PostEvent(EVENT_UI_BUTTON_PRESS, i, NULL);
-            }
-        }
-        
-        vTaskDelayUntil(&time_start_task, run_every_ms);
-    }
-}
 
 // Define task: Sleep/Wakeup according to configuration
 void periodic_task_sleep_wake(void *pvParameters) {
@@ -270,15 +168,4 @@ void periodic_task_check_server(void *pvParameters) {
     }
 }
 
-// Define task: Update display, wait for binary semaphore from view module when need to update
-void blocking_task_update_display(void *pvParameters) {
-    while (1) {
-        // Wait indefinitely for semaphore signal
-        if (xSemaphoreTake(displayUpdateSemaphore, portMAX_DELAY) == pdTRUE) {
-            // Semaphore received, update the display
-            ESP_LOGI(TAG, "Display update task triggered");
-            View__Update_views();
-        }
-    }
-}
 

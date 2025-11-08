@@ -48,28 +48,24 @@ static uint16_t View_green[16];
 static uint16_t View_blue[16];
 
 static View_type View_current_view;
-static uint8_t View_config_updated;
 static uint16_t View_refresh_rate_ms;
 static uint8_t Display_State;  // 0=off, 1=on
 static Brightness_level Brightness;
 
-// Byte holds state of buttons and encoders
-static uint8_t UI_event;
-static uint8_t UI_needs_processed;
+// Thread variables
+TaskHandle_t blockingTaskHandle_display = NULL;
+void blocking_thread_update_display(void *);
 
 // Private method prototypes
 void build_new_view(void); 
 void decrease_brightness(void);
 void increase_brightness(void);
-
+void post_event(event_type_t, uint32_t);
 
 // PUBLIC METHODS
 
 void View__Initialize() {
     View_current_view = VIEW_WEATHER;
-    View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
-
-    UI_event = 0;
     Display_State = 1;
     Brightness = LEVEL_MIN;
 
@@ -78,64 +74,24 @@ void View__Initialize() {
     Conway__Initialize();
     Etchsketch__Initialize();
 
-    build_new_view();
-    View_config_updated = 1;
-    UI_needs_processed = 0;
+    // Display update semaphore is now managed by event_system module
+    // No need to create it here
+
+    xTaskCreate(
+        blocking_thread_update_display,       // Task function
+        "BlockingTask_UpdateDisplay",       // Task name (for debugging)
+        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
+        NULL,                           // Task parameter
+        8,                             // Task priority
+        &blockingTaskHandle_display       // Task handle
+    );
 }
 
-// // Assemble custom view
-// void View__Build_view_custom(uint16_t * view) {
-//     memset(view, 0, 16*2);
-//    
-//     // Upper-left "CJ"
-//     sprite spriteC;
-//     build_sprite_generic(&spriteC, 5, 3, sprite_letter_C);
-//     add_sprite(view, spriteC, 0, 13);
-//
-//     sprite spriteJ;
-//     build_sprite_generic(&spriteJ, 5, 4, sprite_letter_J);
-//     add_sprite(view, spriteJ, 0, 8);
-//
-//     // Lower-right "AJ"
-//     sprite spriteA;
-//     build_sprite_generic(&spriteA, 5, 3, sprite_letter_A);
-//     add_sprite(view, spriteA, 10, 5);
-//
-//     add_sprite(view, spriteJ, 10, 0);
-//
-//     // Middle heart
-//     sprite spriteHeart;
-//     build_sprite_generic(&spriteHeart, 6, 6, sprite_symbol_heart);
-//     add_sprite(view, spriteHeart, 6, 7);
-// }
-
-
-// Main calls this every 100ms
-// 0000 0011 LSB: indicates UI event, 2nd bit: indicates update view
-uint8_t View__Get_view_variables(void) {
-    uint8_t ret_val = UI_needs_processed;
-    ret_val |= (View_config_updated << 1);
-    return ret_val;
-}
-
-// Mqtt calls this if updated weather values
-void View__Set_if_need_update_view(View_type view_updating) {
-    if (view_updating == View_current_view) {
-        View_config_updated = 1;
-    }
-    ESP_LOGI(TAG, "weather updating view");
-}
-
-// Main calls
-uint16_t View__Get_refresh_rate(void) {
-    return View_refresh_rate_ms;
-}
-
-// Main calls this when "UI_needs_processed" is TRUE
-void View__Process_UI(void) {
+// Event system calls this to set UI event bits
+// UI_event bits: 0=btn1, 1=btn2, 2=btn3, 3=btn4, 4=enc1_cw, 5=enc1_ccw, 6=enc2_cw, 7=enc2_ccw
+void View__Process_UI(uint8_t UI_event) {
     // First button: switch between menu and a module view
     if(UI_event & 0x01) {
-        // ESP_LOGI(TAG, "btn1, current view: %d", View_current_view);
         if (View_current_view == VIEW_MENU) {
             View_current_view = Menu__Get_current_view();
             build_new_view();
@@ -247,12 +203,43 @@ void View__Process_UI(void) {
         break;
     }
     
-    View_config_updated = 1;    // Force update
-    ESP_LOGI(TAG, "ui updating view");
-
     UI_event = 0;
     UI_needs_processed = 0;
+
+    ESP_LOGI(TAG, "ui updating view");
+    // give semaphore to update display
 }
+
+// Post view-related events to the event system
+void post_event(event_type_t type, uint32_t data) {
+    EventSystem_PostEvent(type, data, NULL);
+}
+
+// // Assemble custom view
+// void View__Build_view_custom(uint16_t * view) {
+//     memset(view, 0, 16*2);
+//    
+//     // Upper-left "CJ"
+//     sprite spriteC;
+//     build_sprite_generic(&spriteC, 5, 3, sprite_letter_C);
+//     add_sprite(view, spriteC, 0, 13);
+//
+//     sprite spriteJ;
+//     build_sprite_generic(&spriteJ, 5, 4, sprite_letter_J);
+//     add_sprite(view, spriteJ, 0, 8);
+//
+//     // Lower-right "AJ"
+//     sprite spriteA;
+//     build_sprite_generic(&spriteA, 5, 3, sprite_letter_A);
+//     add_sprite(view, spriteA, 10, 5);
+//
+//     add_sprite(view, spriteJ, 10, 0);
+//
+//     // Middle heart
+//     sprite spriteHeart;
+//     build_sprite_generic(&spriteHeart, 6, 6, sprite_symbol_heart);
+//     add_sprite(view, spriteHeart, 6, 7);
+// }
 
 // On UI event, module can request change view
 // void View__Change_view(uint8_t direction) {
@@ -268,8 +255,6 @@ void View__Process_UI(void) {
 //             View_current_view --;
 //         }
 //     }
-
-//     View_config_updated = 1;  // force update
 // }
 
 void View__Change_brightness(uint8_t direction) {
@@ -278,20 +263,6 @@ void View__Change_brightness(uint8_t direction) {
     } else {
         increase_brightness();
     }
-}
-
-// Called from main
-void View__Update_views(void) {
-    build_new_view();
-    ESP_LOGI(TAG, "brightness updating view");
-    View_config_updated = 0;
-    Led_driver__Update_RAM(View_red, View_green, View_blue);
-}
-
-// Set from UI module when UI event occurs
-void View__Set_UI_event(uint8_t ui_event) {
-    UI_event |= ui_event;
-    UI_needs_processed = 1;
 }
 
 // toggle display on/off
@@ -316,9 +287,9 @@ void build_new_view(void) {
     memset(View_blue, 0, sizeof(View_blue));
 
     // Assemble sprite array according to requested view and values
-
     switch (View_current_view) {
     case VIEW_MENU:
+        View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
         Menu__Get_view(View_red, View_green, View_blue);
         break;
     case VIEW_WEATHER:
@@ -335,12 +306,10 @@ void build_new_view(void) {
     default:
         break;
     }
-
-    ESP_LOGI(TAG, "build new view updating view");
-    View_config_updated = 1;    // Force update
 }
 
 
+// Led_driver functions update display
 void decrease_brightness(void) {
     // ESP_LOGI(TAG, "Brightness: %d", Brightness);
     if(Brightness == LEVEL_MIN) {
@@ -352,6 +321,7 @@ void decrease_brightness(void) {
     }
 }
 
+// Led_driver functions update display
 void increase_brightness(void) {
     // ESP_LOGI(TAG, "Brightness: %d", Brightness);
     if(Display_State == 0) {
@@ -363,16 +333,14 @@ void increase_brightness(void) {
     }
 }
 
-// Signal display update task to refresh the display
-void View__Signal_display_update(void) {
-    extern SemaphoreHandle_t displayUpdateSemaphore;
-    if (displayUpdateSemaphore != NULL) {
-        xSemaphoreGive(displayUpdateSemaphore);
+void blocking_thread_update_display(void *pvParameters) {
+    while(1) {
+        // Wait for semaphore from event system
+        uint16_t refresh_rate = View_refresh_rate_ms;
+        if(xSemaphoreTake(displayUpdateSemaphore, refresh_rate) == pdTRUE) {
+            // Update display
+            build_new_view();
+            Led_driver__Update_RAM(View_red, View_green, View_blue);
+        }
     }
 }
-
-// Post view-related events to the event system
-void View__Post_event(event_type_t type, uint32_t data) {
-    EventSystem_PostEvent(type, data, NULL);
-}
-

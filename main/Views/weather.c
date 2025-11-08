@@ -66,7 +66,7 @@ void Weather__Update_values(uint8_t api, uint8_t* payload, uint8_t payload_len) 
     }
 
     if (update_view) {
-        View__Set_if_need_update_view(VIEW_WEATHER);
+        xSemaphoreGive(displayUpdateSemaphore);
     }
 }
 
@@ -82,7 +82,7 @@ void Weather__Set_view_comm_loss(void) {
     Weather_next_day.max_temp = 200;
     Weather_next_day.precip = 200;
     Weather_next_day.moon = 200;
-    View__Set_if_need_update_view(VIEW_WEATHER);
+    xSemaphoreGive(displayUpdateSemaphore);
 }
 
 void Weather__UI_Encoder_Top(uint8_t direction) {

@@ -70,23 +70,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-        //msg_id = esp_mqtt_client_publish(client, MQTT_TOPIC_SUB_NOTIFY, "Reboot", 0, 1, 0);
-        //ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
         msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_DATA_UPDATE, 0);
         ESP_LOGI(TAG, "Subscribed successful, msg_id=%d", msg_id);
-        // Post MQTT connected event
-        EventSystem_PostEvent(EVENT_MQTT_CONNECTED, 0, NULL);
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
-        // Post MQTT disconnected event
-        EventSystem_PostEvent(EVENT_MQTT_DISCONNECTED, 0, NULL);
         break;
     case MQTT_EVENT_SUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-        //msg_id = esp_mqtt_client_publish(client, "/topic/qos0", "data", 0, 0, 0);
-        //msg_id = esp_mqtt_client_publish(client, MQTT_TOPIC_DATA_BOOTUP, 0, 0 ,0);
-        //ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
         break;
     case MQTT_EVENT_UNSUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
@@ -120,13 +111,13 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
 void Mqtt__Start(void)
 {
-    esp_log_level_set("*", ESP_LOG_INFO);
-    esp_log_level_set("mqtt_client", ESP_LOG_VERBOSE);
-    esp_log_level_set("MQTT_EXAMPLE", ESP_LOG_VERBOSE);
-    esp_log_level_set("TRANSPORT_BASE", ESP_LOG_VERBOSE);
-    esp_log_level_set("esp-tls", ESP_LOG_VERBOSE);
-    esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
-    esp_log_level_set("outbox", ESP_LOG_VERBOSE);
+    // esp_log_level_set("*", ESP_LOG_INFO);
+    // esp_log_level_set("mqtt_client", ESP_LOG_VERBOSE);
+    // esp_log_level_set("MQTT_EXAMPLE", ESP_LOG_VERBOSE);
+    // esp_log_level_set("TRANSPORT_BASE", ESP_LOG_VERBOSE);
+    // esp_log_level_set("esp-tls", ESP_LOG_VERBOSE);
+    // esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
+    // esp_log_level_set("outbox", ESP_LOG_VERBOSE);
 
     strcpy(Previous_message, "0");
     Flag_Active_Server = 0;
@@ -223,8 +214,6 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
         if(strcmp(data_str, Previous_message)!= 0) {
             update_weather_module(data_str);
             strcpy(Previous_message, data_str);
-            // Post event to trigger display update
-            EventSystem_PostEvent(EVENT_MQTT_DATA_RECEIVED, 0, NULL);
         }
     }
     else if(strcmp(topic_str, MQTT_TOPIC_FW_VERSION)==0) {

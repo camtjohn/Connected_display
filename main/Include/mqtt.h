@@ -25,11 +25,12 @@ extern uint16_t view_main[16];
 
 void Mqtt__Start(void);
 void Mqtt__Bootup_msgs(char *);
-void Mqtt__Subscribe(char*);
-void Mqtt__Publish(char *, char *);
 void Mqtt__Send_debug_msg(char *);
 uint8_t Mqtt__Get_server_status(void);
 void Mqtt__Reset_server_status(void);
+// Private move to mqtt.c?
+void Mqtt__Subscribe(char*);
+void Mqtt__Publish(char *, char *);
 
 
 #endif

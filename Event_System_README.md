@@ -18,7 +18,6 @@ typedef enum {
     EVENT_MQTT_DATA_RECEIVED,   // New MQTT data available
     EVENT_MQTT_CONNECTED,       // MQTT connection established
     EVENT_MQTT_DISCONNECTED,    // MQTT connection lost
-    EVENT_TIMER_DISPLAY_REFRESH,// Periodic display refresh
     EVENT_WIFI_CONNECTED,       // WiFi connected
     EVENT_WIFI_DISCONNECTED,    // WiFi disconnected
     EVENT_VIEW_CHANGE_REQUEST,  // View change requested
@@ -68,11 +67,6 @@ EventSystem_PostEvent(EVENT_MQTT_DATA_RECEIVED, 0, NULL);
 EventSystem_PostEvent(EVENT_MQTT_CONNECTED, 0, NULL);
 ```
 
-### From View Module
-```c
-// Post brightness change
-View__Post_event(EVENT_BRIGHTNESS_CHANGE, new_brightness_level);
-```
 
 ## Architecture Benefits
 
@@ -94,10 +88,6 @@ View__Post_event(EVENT_BRIGHTNESS_CHANGE, new_brightness_level);
 
 ### MQTT Module
 - Posts events for data reception and connection status changes
-
-### View Module
-- Receives processed UI events through existing interface
-- Can post view-related events using `View__Post_event()`
 
 ## Configuration
 
