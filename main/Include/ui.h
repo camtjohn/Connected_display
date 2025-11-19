@@ -4,6 +4,9 @@
 #define PRESSED     1
 #define NOT_PRESSED 0
 
+#define UI_BUTTON_TASK_PERIOD_MS (50)
+#define UI_ENCODER_TASK_PERIOD_MS (20)
+
 // GPIO Pin Definitions
 #define BTN_1       13
 #define BTN_2       12

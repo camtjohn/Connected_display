@@ -12,16 +12,16 @@ idf_component_register(
 	"tasks.c"
 	"ui.c"
 	"wifi.c"
+	"ota.c"
 	"Views/view.c"
 	"Views/menu.c"
 	"Views/conway.c"
 	"Views/weather.c"
 	"Views/etchsketch.c"
-	EMBED_TXTFILES "device002.crt" "device002.key" "ca.crt"
+	EMBED_TXTFILES "TLS_Keys/device002.crt" "TLS_Keys/device002.key" "TLS_Keys/ca.crt"
                     
 	INCLUDE_DIRS
 	"Include"
 	"Views/Include"
-	"TLS_Keys"
 	)
 target_compile_options(${COMPONENT_LIB} PRIVATE "-Wno-format")

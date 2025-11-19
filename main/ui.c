@@ -213,6 +213,7 @@ void periodic_task_poll_buttons(void *pvParameters) {
         
         if (button_states) {
             EventSystem_PostEvent(EVENT_UI_BUTTON_PRESS, button_states, NULL);
+        }
         
         vTaskDelayUntil(&time_start_task, run_every_ms);
     }

@@ -1,25 +1,14 @@
 #ifndef VIEW_H
 #define VIEW_H
 
-#include "event_system.h"  // For event_type_t
+#include "event_system.h"
 
 #define NUM_VALUES_WEATHER_TODAY  4   // max_temp, precip_percent, moon phase
 #define NUM_SPRITES_MAIN_VIEW     6   // max_temp, current_temp, precip, moon, diag_line, straight_line
 
 #define DEFAULT_REFRESH_RATE_MS    60000   // Update view every 60sec=60000
 
-SemaphoreHandle_t displayUpdateSemaphore = NULL;
-
-// Event System Types
-// Forward declared. Manually update if neededEvent System Types
-typedef enum {
-    EVENT_UI_BUTTON_PRESS,
-    EVENT_UI_ENCODER,
-    EVENT_MQTT_DATA_RECEIVED,
-    EVENT_BRIGHTNESS_CHANGE,
-    EVENT_SYSTEM_SLEEP,
-    EVENT_SYSTEM_WAKEUP
-} event_type_t;
+extern SemaphoreHandle_t displayUpdateSemaphore;
 
 //PUBLIC TYPES
 

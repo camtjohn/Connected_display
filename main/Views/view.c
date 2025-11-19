@@ -42,13 +42,16 @@ typedef enum {
     LEVEL_MAX
 } Brightness_level;
 
+// Public variable
+SemaphoreHandle_t displayUpdateSemaphore = NULL;
+
 // Private static variables
 static uint16_t View_red[16];
 static uint16_t View_green[16];
 static uint16_t View_blue[16];
 
 static View_type View_current_view;
-static uint16_t View_refresh_rate_ms;
+static volatile uint32_t View_refresh_rate_ms;
 static uint8_t Display_State;  // 0=off, 1=on
 static Brightness_level Brightness;
 
@@ -68,14 +71,14 @@ void View__Initialize() {
     View_current_view = VIEW_WEATHER;
     Display_State = 1;
     Brightness = LEVEL_MIN;
+    View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
 
     Menu__Initialize();
     Weather__Initialize();
     Conway__Initialize();
     Etchsketch__Initialize();
 
-    // Display update semaphore is now managed by event_system module
-    // No need to create it here
+    displayUpdateSemaphore = xSemaphoreCreateBinary();
 
     xTaskCreate(
         blocking_thread_update_display,       // Task function
@@ -204,10 +207,9 @@ void View__Process_UI(uint8_t UI_event) {
     }
     
     UI_event = 0;
-    UI_needs_processed = 0;
 
-    ESP_LOGI(TAG, "ui updating view");
-    // give semaphore to update display
+    // ESP_LOGI(TAG, "ui updating view");
+    xSemaphoreGive(displayUpdateSemaphore);
 }
 
 // Post view-related events to the event system
@@ -336,8 +338,9 @@ void increase_brightness(void) {
 void blocking_thread_update_display(void *pvParameters) {
     while(1) {
         // Wait for semaphore from event system
-        uint16_t refresh_rate = View_refresh_rate_ms;
-        if(xSemaphoreTake(displayUpdateSemaphore, refresh_rate) == pdTRUE) {
+        TickType_t wait_ticks = (View_refresh_rate_ms == 0) ? DEFAULT_REFRESH_RATE_MS : pdMS_TO_TICKS(View_refresh_rate_ms);
+
+        if (xSemaphoreTake(displayUpdateSemaphore, wait_ticks) == pdTRUE) {
             // Update display
             build_new_view();
             Led_driver__Update_RAM(View_red, View_green, View_blue);

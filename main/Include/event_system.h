@@ -29,7 +29,6 @@ typedef struct {
 
 // Public variables - handles managed by event system
 extern QueueHandle_t systemEventQueue;
-extern SemaphoreHandle_t displayUpdateSemaphore;
 
 // Public functions
 void EventSystem_Initialize(void);

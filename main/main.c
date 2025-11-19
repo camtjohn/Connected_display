@@ -15,6 +15,7 @@
 #include "main.h"
 #include "event_system.h"
 #include "wifi.h"
+#include "ota.h"
 #include "mqtt.h"
 #include "ui.h"
 #include "led_driver.h"
@@ -46,8 +47,6 @@ void periodic_task_check_server(void *);
 // vTaskResume(periodicTaskHandle);
 
 void app_main(void) {
-    esp_log_level_set("esp-tls", ESP_LOG_VERBOSE);
-    esp_log_level_set("mbedtls", ESP_LOG_VERBOSE);
     ESP_LOGI(TAG, "Starter up");
 
     #if(ENABLE_DISPLAY) 
@@ -60,12 +59,10 @@ void app_main(void) {
     #if(ENABLE_WIFI_MQTT)
     Local_Time__Init_SNTP();
     Wifi__Start();
+    OTA__Init();
     Mqtt__Start();
     // Is this delay still necessary? Why??
     vTaskDelay(pdMS_TO_TICKS(3000));
-
-    char * device_num = "0";
-    Mqtt__Bootup_msgs(device_num);
     #endif
 
     Ui__Initialize();

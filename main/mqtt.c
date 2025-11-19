@@ -26,6 +26,7 @@
 #include "mqtt.h"
 #include "local_time.h"
 #include "weather.h"
+#include "ota.h"
 #include "main.h"
 
 // PRIVATE VARIABLE
@@ -37,6 +38,7 @@ static void log_error_if_nonzero(const char*, int);
 static void mqtt_app_start(void);
 void incoming_mqtt_handler(esp_mqtt_event_handle_t);
 static void update_weather_module(char *);
+void compare_version(char * data_str);
 static uint8_t dbl_dig_str_to_int(char, char);
 void add_null_to_str(char *, char *, uint8_t);
 
@@ -71,6 +73,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
         msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_DATA_UPDATE, 0);
+        esp_mqtt_client_subscribe(client, MQTT_TOPIC_DEV_SPECIFIC, 0);
+        Mqtt__Publish(MQTT_TOPIC_BOOTUP, DEVICE_NAME);
         ESP_LOGI(TAG, "Subscribed successful, msg_id=%d", msg_id);
         break;
     case MQTT_EVENT_DISCONNECTED:
@@ -111,22 +115,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
 void Mqtt__Start(void)
 {
-    // esp_log_level_set("*", ESP_LOG_INFO);
-    // esp_log_level_set("mqtt_client", ESP_LOG_VERBOSE);
-    // esp_log_level_set("MQTT_EXAMPLE", ESP_LOG_VERBOSE);
-    // esp_log_level_set("TRANSPORT_BASE", ESP_LOG_VERBOSE);
-    // esp_log_level_set("esp-tls", ESP_LOG_VERBOSE);
-    // esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
-    // esp_log_level_set("outbox", ESP_LOG_VERBOSE);
-
     strcpy(Previous_message, "0");
     Flag_Active_Server = 0;
     mqtt_app_start();
-}
-
-void Mqtt__Bootup_msgs(char *device_number) {
-    // Request server to publish weather data and publish current version number
-    Mqtt__Publish("dev_bootup", device_number);
 }
 
 void Mqtt__Subscribe(char *topic) {
@@ -188,9 +179,11 @@ static void mqtt_app_start(void)
 {
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = MQTT_BROKER_URL,
-        // .broker.verification.certificate = (const char *)ca_crt_start,
-        // .credentials.authentication.certificate = (const char *)client_crt_start,
-        // .credentials.authentication.key = (const char *)client_key_start,
+        // .broker.address.hostname = "jbar.dev",  // needed for device in home. 192.168.0.112 does not resolve
+        .broker.verification.certificate = (const char *)ca_crt_start,
+        .broker.verification.skip_cert_common_name_check = true,
+        .credentials.authentication.certificate = (const char *)client_crt_start,
+        .credentials.authentication.key = (const char *)client_key_start,
     };
 
     client = esp_mqtt_client_init(&mqtt_cfg);
@@ -205,6 +198,8 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
     char data_str[event->data_len + 1];
     add_null_to_str(topic_str, event->topic, event->topic_len);
     add_null_to_str(data_str, event->data, event->data_len);
+    printf("incoming topic=%.*s\r\n", event->data_len, event->data);
+
     
     // Topic string applies to weather view of this device
     if(strcmp(topic_str, MQTT_TOPIC_DATA_UPDATE)==0) {
@@ -216,8 +211,9 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
             strcpy(Previous_message, data_str);
         }
     }
-    else if(strcmp(topic_str, MQTT_TOPIC_FW_VERSION)==0) {
+    else if(strcmp(topic_str, MQTT_TOPIC_DEV_SPECIFIC)==0) {
         // compare payload to this version. if different, get OTA
+        compare_version(data_str);
     }
 }
 
@@ -225,11 +221,14 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
 // Compare FW version number from server with this FW version
 void compare_version(char * data_str) {
     // Version number is 1st char of str
-    uint8_t version = dbl_dig_str_to_int('0', data_str[0]);
+    uint8_t server_version = dbl_dig_str_to_int(data_str[0], data_str[1]);
 
-    if(version != FW_VERSION_NUM) {
+    if(server_version > FW_VERSION_NUM) {
         // Run OTA get updated FW
+        xSemaphoreGive(startOTASemaphore);
     }
+
+    
 }
 
 // Incoming MQTT update view message. 1st char=0: current weather
