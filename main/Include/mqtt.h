@@ -9,8 +9,8 @@ extern uint16_t view_main[16];
 #define FW_VERSION_NUM      1
 #define DEVICE_NAME        "dev0"
 
-// #define MQTT_BROKER_URL             "mqtts://jbar.dev:8883"
-#define MQTT_BROKER_URL             "mqtts://192.168.0.112:8883"
+#define MQTT_BROKER_URL             "mqtts://jbar.dev:8883"
+// #define MQTT_BROKER_URL             "mqtts://192.168.0.112:8883"
 
 // This client subscribes to these topics
 #define MQTT_TOPIC_DATA_UPDATE      "weather49085"
