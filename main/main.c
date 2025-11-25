@@ -58,14 +58,14 @@ void app_main(void) {
     esp_err_t err = DeviceConfig_Load(&device_config);
     if (err == ESP_ERR_NVS_NOT_FOUND) {
         // First boot - save default configuration
-        strcpy(device_config.device_number, DEFAULT_DEVICE_NUMBER);
+        strcpy(device_config.device_name, DEFAULT_DEVICE_NUMBER);
         strcpy(device_config.zip_code, DEFAULT_ZIP_CODE);
         device_config.brightness = DEFAULT_BRIGHT;
         device_config.timezone_offset = DEFAULT_TIMEZONE;
         DeviceConfig_Save(&device_config);
     }
     
-    ESP_LOGI(TAG, "Device: %s, Zip: %s", device_config.device_number, device_config.zip_code);
+    ESP_LOGI(TAG, "Device: %s, Zip: %s", device_config.device_name, device_config.zip_code);
 
     #if(ENABLE_DISPLAY) 
     View__Initialize();

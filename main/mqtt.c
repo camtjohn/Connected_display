@@ -27,11 +27,15 @@
 #include "local_time.h"
 #include "weather.h"
 #include "ota.h"
+#include "device_config.h"
 #include "main.h"
 
 // PRIVATE VARIABLE
 static char Previous_message[32];
 static uint8_t Flag_Active_Server;
+// Get device name from nvs
+static char Device_name[16];
+static char Topic_Weather_Update[16];
 
 // PRIVATE FUNCTION
 static void log_error_if_nonzero(const char*, int);
@@ -72,10 +76,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-        msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_DATA_UPDATE, 0);
-        esp_mqtt_client_subscribe(client, MQTT_TOPIC_DEV_SPECIFIC, 0);
-        Mqtt__Publish(MQTT_TOPIC_BOOTUP, DEVICE_NAME);
-        ESP_LOGI(TAG, "Subscribed successful, msg_id=%d", msg_id);
+        Mqtt__Subscribe(MQTT_TOPIC_DATA_UPDATE);
+        Mqtt__Subscribe(Device_name);  // subscribe to device specific topic
+        MQTT_Protocol_EncodeString(MQTT_API_DEVICE_CHECKIN, Device_name, (uint8_t *)buf_to_publish);
+        Mqtt__Publish(MQTT_TOPIC_BOOTUP, buf_to_publish);
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
@@ -111,23 +115,32 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 }
 
 
-// PUBLIC Functions
-
-void Mqtt__Start(void)
-{
-    strcpy(Previous_message, "0");
-    Flag_Active_Server = 0;
-    mqtt_app_start();
-}
+// PRIVATE functions (but currently defined as public)
 
 void Mqtt__Subscribe(char *topic) {
     int msg_id = esp_mqtt_client_subscribe(client, topic, 0);
     ESP_LOGI(TAG, "Subscribed successful, msg_id=%d", msg_id);
-
 }
 
 void Mqtt__Publish(char *topic, char *msg) {
     esp_mqtt_client_publish(client, topic, msg, 0, 1, 0);
+}
+
+// PUBLIC Functions
+
+void Mqtt__Start(void)
+{
+    // Get device name from nvs
+    DeviceConfig_GetDeviceName(Device_name, sizeof(Device_name));
+    // Assemble topic string for weather update by concat string "weather" + zip code from nvs. ex "weather60607"
+    char zip_code[8];
+    DeviceConfig_GetZipCode(zip_code, sizeof(zip_code));
+    strcpy(Topic_Weather_Update, "weather");
+    strcat(Topic_Weather_Update, zip_code);
+
+    strcpy(Previous_message, "0");
+    Flag_Active_Server = 0;
+    mqtt_app_start();
 }
 
 uint8_t Mqtt__Get_server_status(void) {
@@ -163,7 +176,8 @@ void Mqtt__Send_debug_msg(char *msg) {
 
     // char ret_msg[] = {time_str, ': ', msg};
     // ESP_LOGI(TAG, ret_msg);
-    esp_mqtt_client_publish(client, "debug", ret_msg, 0, 1, 0);
+    MQTT_Protocol_EncodeString(MQTT_API_SEND_DEBUG_MSG, ret_msg, (uint8_t *)buf_to_publish);
+    Mqtt__Publish(MQTT_TOPIC_DEBUG_MSG, buf_to_publish);
 }
 
 // PRIVATE Functions
@@ -179,7 +193,6 @@ static void mqtt_app_start(void)
 {
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = MQTT_BROKER_URL,
-        // .broker.address.hostname = "jbar.dev",  // needed for device in home. 192.168.0.112 does not resolve
         .broker.verification.certificate = (const char *)ca_crt_start,
         .broker.verification.skip_cert_common_name_check = true,
         .credentials.authentication.certificate = (const char *)client_crt_start,
@@ -202,7 +215,7 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
 
     
     // Topic string applies to weather view of this device
-    if(strcmp(topic_str, MQTT_TOPIC_DATA_UPDATE)==0) {
+    if(strcmp(topic_str, Topic_Weather_Update)==0) {
         // Set flag indicates receiving communicatings from server
         Flag_Active_Server = 1;
         // Data is different from previous message, update stored weather data
@@ -211,7 +224,8 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
             strcpy(Previous_message, data_str);
         }
     }
-    else if(strcmp(topic_str, MQTT_TOPIC_DEV_SPECIFIC)==0) {
+    // Topic string applies to device specific commands
+    else if(strcmp(topic_str, Device_name)==0) {
         // compare payload to this version. if different, get OTA
         compare_version(data_str);
     }
@@ -227,8 +241,6 @@ void compare_version(char * data_str) {
         // Run OTA get updated FW
         xSemaphoreGive(startOTASemaphore);
     }
-
-    
 }
 
 // Incoming MQTT update view message. 1st char=0: current weather

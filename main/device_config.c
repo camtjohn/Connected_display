@@ -26,7 +26,7 @@ esp_err_t DeviceConfig_Load(device_config_t *config) {
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "NVS namespace not found, using defaults");
         // Set defaults
-        strcpy(config->device_number, DEFAULT_DEVICE_NUMBER);
+        strcpy(config->device_name, DEFAULT_DEVICE_NUMBER);
         strcpy(config->zip_code, DEFAULT_ZIP_CODE);
         config->brightness = DEFAULT_BRIGHT;
         config->timezone_offset = DEFAULT_TIMEZONE;
@@ -35,12 +35,12 @@ esp_err_t DeviceConfig_Load(device_config_t *config) {
 
     size_t required_size;
     
-    // Read device number
-    required_size = sizeof(config->device_number);
-    err = nvs_get_str(nvs_handle, "device_num", config->device_number, &required_size);
+    // Read device name
+    required_size = sizeof(config->device_name);
+    err = nvs_get_str(nvs_handle, "device_num", config->device_name, &required_size);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Device number not found in NVS, using default");
-        strcpy(config->device_number, DEFAULT_DEVICE_NUMBER);
+        ESP_LOGW(TAG, "Device name not found in NVS, using default");
+        strcpy(config->device_name, DEFAULT_DEVICE_NUMBER);
     }
 
     // Read zip code
@@ -77,10 +77,10 @@ esp_err_t DeviceConfig_Save(const device_config_t *config) {
         return err;
     }
 
-    // Save device number
-    err = nvs_set_str(nvs_handle, "device_num", config->device_number);
+    // Save device name
+    err = nvs_set_str(nvs_handle, "device_num", config->device_name);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to save device number: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Failed to save device name: %s", esp_err_to_name(err));
         goto cleanup;
     }
 
@@ -119,11 +119,11 @@ cleanup:
     return err;
 }
 
-esp_err_t DeviceConfig_GetDeviceNumber(char *buffer, size_t buffer_size) {
+esp_err_t DeviceConfig_GetDeviceName(char *buffer, size_t buffer_size) {
     device_config_t config;
     esp_err_t err = DeviceConfig_Load(&config);
     if (err == ESP_OK || err == ESP_ERR_NVS_NOT_FOUND) {
-        strncpy(buffer, config.device_number, buffer_size - 1);
+        strncpy(buffer, config.device_name, buffer_size - 1);
         buffer[buffer_size - 1] = '\0';
         return ESP_OK;
     }
@@ -141,11 +141,11 @@ esp_err_t DeviceConfig_GetZipCode(char *buffer, size_t buffer_size) {
     return err;
 }
 
-esp_err_t DeviceConfig_SetDeviceNumber(const char *device_num) {
+esp_err_t DeviceConfig_SetDeviceName(const char *device_name) {
     device_config_t config;
     DeviceConfig_Load(&config);  // Load current config (ignore errors, use defaults)
-    strncpy(config.device_number, device_num, sizeof(config.device_number) - 1);
-    config.device_number[sizeof(config.device_number) - 1] = '\0';
+    strncpy(config.device_name, device_name, sizeof(config.device_name) - 1);
+    config.device_name[sizeof(config.device_name) - 1] = '\0';
     return DeviceConfig_Save(&config);
 }
 

@@ -8,6 +8,7 @@ idf_component_register(
 	"local_time.c"
 	"main.c"
 	"mqtt.c"
+	"mqtt_protocol.c"
 	"spi.c"
 	"sprite.c"
 	"tasks.c"
