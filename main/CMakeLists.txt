@@ -2,6 +2,7 @@ idf_component_register(
 	SRCS 
 	"led_driver.c"
 	"animation.c"
+	"device_config.c"
 	"event_system.c"
 	"http_rest.c"
 	"local_time.c"
