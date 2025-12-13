@@ -24,23 +24,24 @@
 #include "mqtt_client.h"
 
 #include "mqtt.h"
+#include "mqtt_protocol.h"
 #include "local_time.h"
 #include "weather.h"
 #include "ota.h"
 #include "main.h"
 
 // PRIVATE VARIABLE
-static char Previous_message[32];
+// Max size for 3-day forecast: Header(2) + num_days(1) + 3 days × 3 bytes(9) = 12 bytes
+static uint8_t Previous_weather_message[MQTT_PROTOCOL_HEADER_SIZE + 1 + (3 * 3)];
 static uint8_t Flag_Active_Server;
 
 // PRIVATE FUNCTION
 static void log_error_if_nonzero(const char*, int);
 static void mqtt_app_start(void);
 void incoming_mqtt_handler(esp_mqtt_event_handle_t);
-static void update_weather_module(char *);
-void compare_version(char * data_str);
-static uint8_t dbl_dig_str_to_int(char, char);
-void add_null_to_str(char *, char *, uint8_t);
+static void process_current_weather(const uint8_t *payload, uint8_t payload_len);
+static void process_forecast_weather(const uint8_t *payload, uint8_t payload_len);
+static void compare_version(uint8_t version);
 
 static const char *TAG = "WEATHER_STATION: MQTT";
 
@@ -72,7 +73,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-        msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_DATA_UPDATE, 0);
+        msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_WEATHER_UPDATE, 0);
         esp_mqtt_client_subscribe(client, MQTT_TOPIC_DEV_SPECIFIC, 0);
         Mqtt__Publish(MQTT_TOPIC_BOOTUP, DEVICE_NAME);
         ESP_LOGI(TAG, "Subscribed successful, msg_id=%d", msg_id);
@@ -115,7 +116,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
 void Mqtt__Start(void)
 {
-    strcpy(Previous_message, "0");
+    memset(Previous_weather_message, 0, sizeof(Previous_weather_message));
     Flag_Active_Server = 0;
     mqtt_app_start();
 }
@@ -192,100 +193,119 @@ static void mqtt_app_start(void)
     esp_mqtt_client_start(client);
 }
 
-// Handle incoming MQTT string message
+// Handle incoming MQTT binary message
 void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
-    char topic_str[event->topic_len + 1];
-    char data_str[event->data_len + 1];
-    add_null_to_str(topic_str, event->topic, event->topic_len);
-    add_null_to_str(data_str, event->data, event->data_len);
-    printf("incoming topic=%.*s\r\n", event->data_len, event->data);
+    // Set flag indicates receiving communications from server
+    Flag_Active_Server = 1;
 
+    // Create null-terminated topic string for comparison
+    char topic_str[event->topic_len + 1];
+    strncpy(topic_str, event->topic, event->topic_len);
+    topic_str[event->topic_len] = '\0';
+    
+    ESP_LOGI(TAG, "Received %d bytes on topic: %s", event->data_len, topic_str);
+    
+    // Parse message header
+    mqtt_msg_header_t header;
+    if (mqtt_protocol_parse_header((uint8_t *)event->data, event->data_len, &header) != 0) {
+        ESP_LOGE(TAG, "Failed to parse message header");
+        return;
+    }
+    
+    const uint8_t *payload = (uint8_t *)event->data + MQTT_PROTOCOL_HEADER_SIZE;
     
     // Topic string applies to weather view of this device
-    if(strcmp(topic_str, MQTT_TOPIC_DATA_UPDATE)==0) {
-        // Set flag indicates receiving communicatings from server
-        Flag_Active_Server = 1;
-        // Data is different from previous message, update stored weather data
-        if(strcmp(data_str, Previous_message)!= 0) {
-            update_weather_module(data_str);
-            strcpy(Previous_message, data_str);
-        }
+    if(strcmp(topic_str, MQTT_TOPIC_WEATHER_UPDATE) == 0) {
+        // Check if message is different from previous (avoid redundant processing)
+        uint8_t is_duplicate = (memcmp(event->data, Previous_weather_message, event->data_len) == 0);
+        
+        if (!is_duplicate) {
+            // Process based on message type
+            switch (header.type) {
+                case MSG_TYPE_CURRENT_WEATHER:
+                    process_current_weather(payload, header.length);
+                    break;
+                    
+                case MSG_TYPE_FORECAST_WEATHER:
+                    process_forecast_weather(payload, header.length);
+                    break;
+                    
+                default:
+                    ESP_LOGW(TAG, "Unknown message type: 0x%02X", header.type);
+                    break;
+            }
+            
+            // Store message to detect duplicates
+            if (event->data_len <= sizeof(Previous_weather_message)) {
+                memcpy(Previous_weather_message, event->data, event->data_len);
+            }
     }
-    else if(strcmp(topic_str, MQTT_TOPIC_DEV_SPECIFIC)==0) {
-        // compare payload to this version. if different, get OTA
-        compare_version(data_str);
+    else if(strcmp(topic_str, MQTT_TOPIC_DEV_SPECIFIC) == 0) {
+        // Process version message
+        if (header.type == MSG_TYPE_VERSION) {
+            mqtt_version_t version;
+            if (mqtt_protocol_parse_version(payload, header.length, &version) == 0) {
+                compare_version(version.version);
+            }
+        } else {
+            ESP_LOGW(TAG, "Unknown device-specific message type: 0x%02X", header.type);
+        }
     }
 }
 
 
 // Compare FW version number from server with this FW version
-void compare_version(char * data_str) {
-    // Version number is 1st char of str
-    uint8_t server_version = dbl_dig_str_to_int(data_str[0], data_str[1]);
-
-    if(server_version > FW_VERSION_NUM) {
+static void compare_version(uint8_t server_version) {
+    ESP_LOGI(TAG, "Server version: %d, Device version: %d", server_version, FW_VERSION_NUM);
+    
+    if (server_version > FW_VERSION_NUM) {
+        ESP_LOGI(TAG, "New firmware available, triggering OTA update");
         // Run OTA get updated FW
         xSemaphoreGive(startOTASemaphore);
     }
+}
 
+// Process current weather message
+static void process_current_weather(const uint8_t *payload, uint8_t payload_len) {
+    mqtt_current_weather_t weather;
     
-}
-
-// Incoming MQTT update view message. 1st char=0: current weather
-//                                    1st char=1: forecast, includes max temp,precip,moon
-void update_weather_module(char * data_str) {
-    // API is 1st char of str
-    uint8_t api = dbl_dig_str_to_int('0', data_str[0]);
-
-    // Will send the following to view module to update values
-    uint8_t payload[MAX_NUM_PAYLOAD_BYTES];
-    uint8_t payload_len = 0;
-    // Current temp (periodic through day)
-    if (api == 0) {
-        uint8_t temp_current = dbl_dig_str_to_int(data_str[1], data_str[2]);
-        payload[0] = temp_current;
-        payload_len = 1;
+    if (mqtt_protocol_parse_current_weather(payload, payload_len, &weather) != 0) {
+        ESP_LOGE(TAG, "Failed to parse current weather");
+        return;
     }
+    
+    // Get actual temperature (with offset removed)
+    int8_t actual_temp = mqtt_protocol_get_actual_temp(weather.temperature);
+    
+    // Prepare payload for weather module (API 0 = current weather)
+    uint8_t weather_payload[1];
+    weather_payload[0] = (uint8_t)actual_temp;  // Weather module expects actual temp
+    
+    ESP_LOGI(TAG, "Updating current weather: %d°F", actual_temp);
+    Weather__Update_values(0, weather_payload, 1);
+}
 
-    // Forecast today
-    else if (api == 1) {
-        // First byte=how many days forecasting
-        uint8_t num_days = (data_str[1] - '0');
-        payload[0] = num_days;
-        payload_len = 1;
-
-        uint8_t idx_data = 2;
-        uint8_t idx_payload = 1;
-        for(uint8_t day = 0; day<num_days; day++) {
-            // idx_data += (day * 5);
-            uint8_t temp_max = dbl_dig_str_to_int(data_str[idx_data], data_str[idx_data+1]);
-            uint8_t precip = dbl_dig_str_to_int(data_str[idx_data+2], data_str[idx_data+3]);
-            uint8_t moon = (data_str[idx_data+4] - '0');
-            idx_data = idx_data + 5;
-
-            // uint8_t idx_payload = ((day * 3) + 1);
-            payload[idx_payload] = temp_max;
-            payload[idx_payload+1] = precip;
-            payload[idx_payload+2] = moon;
-            idx_payload += 3;
-        }
-        payload_len = idx_payload + 1;
+// Process forecast weather message
+static void process_forecast_weather(const uint8_t *payload, uint8_t payload_len) {
+    mqtt_forecast_weather_t forecast;
+    
+    if (mqtt_protocol_parse_forecast_weather(payload, payload_len, &forecast) != 0) {
+        ESP_LOGE(TAG, "Failed to parse forecast weather");
+        return;
     }
-
-    // Update display with newly receieved weather data
-    Weather__Update_values(api, payload, payload_len);
-}
-
-// Convert char(s) to int
-uint8_t dbl_dig_str_to_int(char dig1, char dig2) {
-    char temp_digit[2];
-    temp_digit[0] = dig1;
-    temp_digit[1] = dig2;
-    uint8_t dbl_dig_int = (uint8_t) strtol(temp_digit, NULL, 0);
-    return(dbl_dig_int);
-}
-
-void add_null_to_str(char * ret_str, char * input_str, uint8_t str_len) {
-    strncpy(ret_str, input_str, str_len);
-    ret_str[str_len] = '\0';
+    
+    // Prepare payload for weather module (API 1 = forecast)
+    // Format: [num_days][day1_high][day1_precip][day1_moon][day2_high]...
+    uint8_t weather_payload[1 + (7 * 3)];  // Max 7 days
+    weather_payload[0] = forecast.num_days;
+    
+    uint8_t idx = 1;
+    for (uint8_t i = 0; i < forecast.num_days; i++) {
+        weather_payload[idx++] = forecast.days[i].high_temp;
+        weather_payload[idx++] = forecast.days[i].precip;
+        weather_payload[idx++] = forecast.days[i].moon;
+    }
+    
+    ESP_LOGI(TAG, "Updating %d-day forecast", forecast.num_days);
+    Weather__Update_values(1, weather_payload, idx);
 }

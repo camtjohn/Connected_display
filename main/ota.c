@@ -11,8 +11,7 @@
 
 static const char *TAG = "ota";
 
-#define OTA_URL "https://192.168.0.112/firmware.bin"
-// #define OTA_URL "https://jbar.dev/firmware.bin"
+#define OTA_URL "https://jbar.dev/firmware.bin"
 
 extern const uint8_t _binary_ca_crt_start[];
 extern const uint8_t _binary_ca_crt_end[];
