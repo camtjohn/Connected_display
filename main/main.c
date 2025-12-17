@@ -14,6 +14,7 @@
 
 #include "main.h"
 #include "event_system.h"
+#include "device_config.h"
 #include "wifi.h"
 #include "ota.h"
 #include "mqtt.h"
@@ -42,10 +43,6 @@ void periodic_task_sleep_wake(void *);
 TaskHandle_t periodicTaskHandle_server = NULL;
 void periodic_task_check_server(void *);
 
-// Example suspend/resume task:
-// vTaskSuspend(periodicTaskHandle);
-// vTaskResume(periodicTaskHandle);
-
 void app_main(void) {
     ESP_LOGI(TAG, "Starter up");
 
@@ -57,6 +54,11 @@ void app_main(void) {
     #endif
 
     #if(ENABLE_WIFI_MQTT)
+    // Initialize device config from NVS first
+    if (Device_Config__Init() != 0) {
+        ESP_LOGE(TAG, "Failed to initialize device config!");
+    }
+    
     Local_Time__Init_SNTP();
     Wifi__Start();
     OTA__Init();

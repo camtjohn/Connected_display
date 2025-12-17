@@ -8,6 +8,7 @@
 #include "esp_https_ota.h"
 
 #include "ota.h"
+#include "device_config.h"
 
 static const char *TAG = "ota";
 
@@ -106,8 +107,23 @@ void blocking_thread_start_OTA(void *pvParameters) {
     }
 }
 
+void OTA__Trigger(void) {
+    xSemaphoreGive(startOTASemaphore);
+}
+
 void OTA__Init(void) {
     ESP_LOGI(TAG, "OTA Init start");
+    
+    // Check if we just booted from an OTA update
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t ota_state;
+    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
+        if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
+            // First boot after OTA - mark as valid
+            ESP_LOGI(TAG, "First boot after OTA update detected - marking as valid");
+            esp_ota_mark_app_valid_cancel_rollback();
+        }
+    }
 
     startOTASemaphore = xSemaphoreCreateBinary();
     if (startOTASemaphore == NULL) {

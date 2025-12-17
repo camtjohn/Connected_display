@@ -17,6 +17,7 @@
 #define MSG_TYPE_GENERIC            0x00
 #define MSG_TYPE_CURRENT_WEATHER    0x01
 #define MSG_TYPE_FORECAST_WEATHER   0x02
+#define MSG_TYPE_DEVICE_CONFIG      0x03
 #define MSG_TYPE_VERSION            0x10
 
 // Protocol Constants
@@ -64,6 +65,16 @@ typedef struct {
     uint8_t num_days;                   // Number of forecast days
     mqtt_forecast_day_t days[7];        // Array of forecast days (max 7)
 } mqtt_forecast_weather_t;
+
+/**
+ * @brief Device config message payload
+ * Format: [num_strings][str1_len][str1_data][str2_len][str2_data]...\n * Supports variable number of variable-length strings
+ */
+typedef struct {
+    uint8_t num_strings;
+    char strings[10][16];       // Up to 10 strings, max 16 chars each
+    uint8_t string_lens[10];
+} mqtt_device_config_t;
 
 /**
  * @brief Version message payload
@@ -123,5 +134,18 @@ int mqtt_protocol_parse_version(const uint8_t *payload, uint8_t payload_len,
  * @return Actual temperature in °F (can be negative)
  */
 int8_t mqtt_protocol_get_actual_temp(uint8_t temp_with_offset);
+
+/**
+ * @brief Build device config message with multiple variable-length strings
+ * Encodes strings as: [num_strings][str1_len][str1][str2_len][str2]...
+ * 
+ * @param strings Array of string pointers
+ * @param num_strings Number of strings in array
+ * @param buffer Output buffer for complete message (header + payload)
+ * @param buffer_size Size of output buffer
+ * @return Number of bytes written, or -1 on error
+ */
+int mqtt_protocol_build_device_config(const char **strings, uint8_t num_strings,
+                                      uint8_t *buffer, uint8_t buffer_size);
 
 #endif // MQTT_PROTOCOL_H

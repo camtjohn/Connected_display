@@ -3,10 +3,9 @@
 
 #include "freertos/semphr.h"
 
-#define FW_VERSION 2
-
 extern SemaphoreHandle_t startOTASemaphore;
 
 void OTA__Init(void);
+void OTA__Trigger(void);
 
 #endif

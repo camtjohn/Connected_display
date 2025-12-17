@@ -8,6 +8,7 @@ idf_component_register(
 	"main.c"
 	"mqtt.c"
 	"mqtt_protocol.c"
+	"device_config.c"
 	"spi.c"
 	"sprite.c"
 	"tasks.c"

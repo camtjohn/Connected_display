@@ -25,23 +25,25 @@
 
 #include "mqtt.h"
 #include "mqtt_protocol.h"
+#include "device_config.h"
 #include "local_time.h"
 #include "weather.h"
 #include "ota.h"
 #include "main.h"
 
 // PRIVATE VARIABLE
-// Max size for 3-day forecast: Header(2) + num_days(1) + 3 days × 3 bytes(9) = 12 bytes
-static uint8_t Previous_weather_message[MQTT_PROTOCOL_HEADER_SIZE + 1 + (3 * 3)];
+static uint8_t Previous_weather_message[(3*3) + MQTT_PROTOCOL_HEADER_SIZE]; // Max size for weather 3day forecast + header
 static uint8_t Flag_Active_Server;
+static char weather_topic_with_zip[24] = {0};  // Static buffer for weather topic with zipcode
 
 // PRIVATE FUNCTION
 static void log_error_if_nonzero(const char*, int);
 static void mqtt_app_start(void);
-void incoming_mqtt_handler(esp_mqtt_event_handle_t);
+static void handle_mqtt_connected(esp_mqtt_client_handle_t client);
+static void incoming_mqtt_handler(esp_mqtt_event_handle_t);
 static void process_current_weather(const uint8_t *payload, uint8_t payload_len);
 static void process_forecast_weather(const uint8_t *payload, uint8_t payload_len);
-static void compare_version(uint8_t version);
+static void check_and_trigger_ota_update(uint8_t server_version);
 
 static const char *TAG = "WEATHER_STATION: MQTT";
 
@@ -53,6 +55,54 @@ extern const uint8_t client_crt_start[] asm("_binary_device002_crt_start");
 extern const uint8_t client_crt_end[]   asm("_binary_device002_crt_end");
 extern const uint8_t client_key_start[] asm("_binary_device002_key_start");
 extern const uint8_t client_key_end[]   asm("_binary_device002_key_end");
+
+/*
+ * @brief Handle MQTT connected event
+ * 
+ * Subscribes to weather and device-specific topics, and sends bootup device config
+ * 
+ * @param client MQTT client handle
+ */
+static void handle_mqtt_connected(esp_mqtt_client_handle_t client) {
+    ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+    
+    int msg_id;
+    // Build weather topic with zipcode from NVS
+    char zipcode[8] = {0};
+    if (Device_Config__Get_Zipcode(zipcode, sizeof(zipcode)) == 0) {
+        // Append zipcode to base topic (no separators) and store in static variable
+        snprintf(weather_topic_with_zip, sizeof(weather_topic_with_zip), "%s%s", MQTT_TOPIC_WEATHER_BASE, zipcode);
+        ESP_LOGI(TAG, "Subscribing to weather topic: %s", weather_topic_with_zip);
+        msg_id = esp_mqtt_client_subscribe(client, weather_topic_with_zip, 0);
+    } else {
+        ESP_LOGE(TAG, "Failed to read zipcode from NVS, subscribing to base topic only");
+        snprintf(weather_topic_with_zip, sizeof(weather_topic_with_zip), "%s", MQTT_TOPIC_WEATHER_BASE);
+        msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_WEATHER_BASE, 0);
+    }
+
+    // Subscribe to device-specific topic
+    esp_mqtt_client_subscribe(client, MQTT_TOPIC_DEV_SPECIFIC, 0);
+
+    // Send device config message (binary) from NVS
+    uint8_t config_msg[64];
+    char device_name[16];
+    if (Device_Config__Get_Name(device_name, sizeof(device_name)) == 0 &&
+        Device_Config__Get_Zipcode(zipcode, sizeof(zipcode)) == 0) {
+        const char *config_strings[] = {device_name, zipcode};
+        ESP_LOGI(TAG, "Building device config with: '%s' and '%s'", device_name, zipcode);
+        int config_len = mqtt_protocol_build_device_config(config_strings, 2, config_msg, sizeof(config_msg));
+        if (config_len > 0) {
+            ESP_LOGI(TAG, "Successfully built device config message: %d bytes", config_len);
+            Mqtt__Publish(MQTT_TOPIC_BOOTUP, config_msg, config_len);
+        } else {
+            ESP_LOGE(TAG, "Failed to build device config message");
+        }
+    } else {
+        ESP_LOGE(TAG, "Failed to read device config from NVS");
+    }
+
+    ESP_LOGI(TAG, "Subscribed successful, msg_id=%d", msg_id);
+}
 
 /*
  * @brief Event handler registered to receive MQTT events
@@ -69,14 +119,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     ESP_LOGD(TAG, "Event dispatched from event loop base=%s, event_id=%d", base, event_id);
     esp_mqtt_event_handle_t event = event_data;
     esp_mqtt_client_handle_t client = event->client;
-    int msg_id;
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
-        ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-        msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_WEATHER_UPDATE, 0);
-        esp_mqtt_client_subscribe(client, MQTT_TOPIC_DEV_SPECIFIC, 0);
-        Mqtt__Publish(MQTT_TOPIC_BOOTUP, DEVICE_NAME);
-        ESP_LOGI(TAG, "Subscribed successful, msg_id=%d", msg_id);
+        handle_mqtt_connected(client);
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
@@ -127,8 +172,8 @@ void Mqtt__Subscribe(char *topic) {
 
 }
 
-void Mqtt__Publish(char *topic, char *msg) {
-    esp_mqtt_client_publish(client, topic, msg, 0, 1, 0);
+void Mqtt__Publish(char *topic, const uint8_t *data, uint16_t data_len) {
+    esp_mqtt_client_publish(client, topic, (const char *)data, data_len, 1, 0);
 }
 
 uint8_t Mqtt__Get_server_status(void) {
@@ -194,7 +239,7 @@ static void mqtt_app_start(void)
 }
 
 // Handle incoming MQTT binary message
-void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
+static void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
     // Set flag indicates receiving communications from server
     Flag_Active_Server = 1;
 
@@ -212,21 +257,31 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
         return;
     }
     
+    ESP_LOGI(TAG, "Parsed header: type=0x%02X, length=%d", header.type, header.length);
+    
     const uint8_t *payload = (uint8_t *)event->data + MQTT_PROTOCOL_HEADER_SIZE;
     
     // Topic string applies to weather view of this device
-    if(strcmp(topic_str, MQTT_TOPIC_WEATHER_UPDATE) == 0) {
+    ESP_LOGI(TAG, "Topic comparison: received='%s' vs expected='%s'", topic_str, weather_topic_with_zip);
+    if(strcmp(topic_str, weather_topic_with_zip) == 0) {
+        ESP_LOGI(TAG, "Message on WEATHER_UPDATE topic");
+        
         // Check if message is different from previous (avoid redundant processing)
         uint8_t is_duplicate = (memcmp(event->data, Previous_weather_message, event->data_len) == 0);
+        ESP_LOGI(TAG, "Duplicate check: is_duplicate=%d, event->data_len=%d, buffer_size=%d", 
+                 is_duplicate, event->data_len, sizeof(Previous_weather_message));
         
         if (!is_duplicate) {
             // Process based on message type
+            ESP_LOGI(TAG, "Processing message type 0x%02X", header.type);
             switch (header.type) {
                 case MSG_TYPE_CURRENT_WEATHER:
+                    ESP_LOGI(TAG, "Processing CURRENT_WEATHER");
                     process_current_weather(payload, header.length);
                     break;
                     
                 case MSG_TYPE_FORECAST_WEATHER:
+                    ESP_LOGI(TAG, "Processing FORECAST_WEATHER");
                     process_forecast_weather(payload, header.length);
                     break;
                     
@@ -239,13 +294,14 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
             if (event->data_len <= sizeof(Previous_weather_message)) {
                 memcpy(Previous_weather_message, event->data, event->data_len);
             }
+        }
     }
     else if(strcmp(topic_str, MQTT_TOPIC_DEV_SPECIFIC) == 0) {
         // Process version message
         if (header.type == MSG_TYPE_VERSION) {
             mqtt_version_t version;
             if (mqtt_protocol_parse_version(payload, header.length, &version) == 0) {
-                compare_version(version.version);
+                check_and_trigger_ota_update(version.version);
             }
         } else {
             ESP_LOGW(TAG, "Unknown device-specific message type: 0x%02X", header.type);
@@ -254,13 +310,14 @@ void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
 }
 
 
-// Compare FW version number from server with this FW version
-static void compare_version(uint8_t server_version) {
+// Check if server has newer version and trigger OTA update if needed
+static void check_and_trigger_ota_update(uint8_t server_version) {
     ESP_LOGI(TAG, "Server version: %d, Device version: %d", server_version, FW_VERSION_NUM);
     
     if (server_version > FW_VERSION_NUM) {
-        ESP_LOGI(TAG, "New firmware available, triggering OTA update");
-        // Run OTA get updated FW
+        ESP_LOGI(TAG, "New firmware available (server=%d > device=%d), triggering OTA update", 
+                 server_version, FW_VERSION_NUM);
+        // Trigger OTA
         xSemaphoreGive(startOTASemaphore);
     }
 }
