@@ -20,7 +20,7 @@ idf_component_register(
 	"Views/conway.c"
 	"Views/weather.c"
 	"Views/etchsketch.c"
-	EMBED_TXTFILES "TLS_Keys/device002.crt" "TLS_Keys/device002.key" "TLS_Keys/ca.crt"
+	EMBED_TXTFILES "TLS_Keys/ca.crt"
                     
 	INCLUDE_DIRS
 	"Include"

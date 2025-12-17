@@ -34,6 +34,8 @@
 // PRIVATE VARIABLE
 static uint8_t Previous_weather_message[(3*3) + MQTT_PROTOCOL_HEADER_SIZE]; // Max size for weather 3day forecast + header
 static uint8_t Flag_Active_Server;
+static char *client_cert_buffer = NULL;  // Dynamically allocated from NVS
+static char *client_key_buffer = NULL;   // Dynamically allocated from NVS
 static char weather_topic_with_zip[24] = {0};  // Static buffer for weather topic with zipcode
 
 // PRIVATE FUNCTION
@@ -49,12 +51,10 @@ static const char *TAG = "WEATHER_STATION: MQTT";
 
 static esp_mqtt_client_handle_t client;
 
+// Only CA certificate is embedded in binary
 extern const uint8_t ca_crt_start[] asm("_binary_ca_crt_start");
 extern const uint8_t ca_crt_end[]   asm("_binary_ca_crt_end");
-extern const uint8_t client_crt_start[] asm("_binary_device002_crt_start");
-extern const uint8_t client_crt_end[]   asm("_binary_device002_crt_end");
-extern const uint8_t client_key_start[] asm("_binary_device002_key_start");
-extern const uint8_t client_key_end[]   asm("_binary_device002_key_end");
+// Client cert and key are loaded from NVS
 
 /*
  * @brief Handle MQTT connected event
@@ -223,13 +223,62 @@ void log_error_if_nonzero(const char *message, int error_code)
 
 static void mqtt_app_start(void)
 {
+    // Load client certificate and key from NVS
+    size_t cert_size = 0, key_size = 0;
+    
+    // Get certificate size and allocate buffer
+    if (Device_Config__Get_Client_Cert(NULL, 0, &cert_size) != 0 || cert_size == 0) {
+        ESP_LOGE(TAG, "Failed to get client certificate size from NVS");
+        return;
+    }
+    
+    client_cert_buffer = malloc(cert_size);
+    if (client_cert_buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for client certificate");
+        return;
+    }
+    
+    if (Device_Config__Get_Client_Cert(client_cert_buffer, cert_size, NULL) != 0) {
+        ESP_LOGE(TAG, "Failed to load client certificate from NVS");
+        free(client_cert_buffer);
+        client_cert_buffer = NULL;
+        return;
+    }
+    
+    // Get key size and allocate buffer
+    if (Device_Config__Get_Client_Key(NULL, 0, &key_size) != 0 || key_size == 0) {
+        ESP_LOGE(TAG, "Failed to get client key size from NVS");
+        free(client_cert_buffer);
+        client_cert_buffer = NULL;
+        return;
+    }
+    
+    client_key_buffer = malloc(key_size);
+    if (client_key_buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for client key");
+        free(client_cert_buffer);
+        client_cert_buffer = NULL;
+        return;
+    }
+    
+    if (Device_Config__Get_Client_Key(client_key_buffer, key_size, NULL) != 0) {
+        ESP_LOGE(TAG, "Failed to load client key from NVS");
+        free(client_cert_buffer);
+        free(client_key_buffer);
+        client_cert_buffer = NULL;
+        client_key_buffer = NULL;
+        return;
+    }
+    
+    ESP_LOGI(TAG, "Loaded client certificate (%d bytes) and key (%d bytes) from NVS", cert_size, key_size);
+    
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = MQTT_BROKER_URL,
         // .broker.address.hostname = "jbar.dev",  // needed for device in home. 192.168.0.112 does not resolve
         .broker.verification.certificate = (const char *)ca_crt_start,
         .broker.verification.skip_cert_common_name_check = true,
-        .credentials.authentication.certificate = (const char *)client_crt_start,
-        .credentials.authentication.key = (const char *)client_key_start,
+        .credentials.authentication.certificate = client_cert_buffer,
+        .credentials.authentication.key = client_key_buffer,
     };
 
     client = esp_mqtt_client_init(&mqtt_cfg);

@@ -11,10 +11,12 @@ static const char *NVS_NAMESPACE = "device_cfg";
 static struct {
     char device_name[16];
     char zipcode[8];
+    char user_name[16];
     bool initialized;
 } config_cache = {
     .device_name = "dev0",
     .zipcode = "60607",
+    .user_name = "user",
     .initialized = false
 };
 
@@ -67,13 +69,25 @@ int Device_Config__Init(void) {
         ESP_LOGI(TAG, "Loaded zipcode from NVS: %s", config_cache.zipcode);
     }
     
+    // Read user name (or use default)
+    size_t user_len = sizeof(config_cache.user_name);
+    err = nvs_get_str(nvs_handle, "user_name", config_cache.user_name, &user_len);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(TAG, "User name not found in NVS, using default: %s", config_cache.user_name);
+        nvs_set_str(nvs_handle, "user_name", config_cache.user_name);
+    } else if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Error reading user name: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "Loaded user name from NVS: %s", config_cache.user_name);
+    }
+    
     // Commit writes
     nvs_commit(nvs_handle);
     nvs_close(nvs_handle);
     
     config_cache.initialized = true;
-    ESP_LOGI(TAG, "Device config initialized: %s, %s", 
-             config_cache.device_name, config_cache.zipcode);
+    ESP_LOGI(TAG, "Device config initialized: %s, %s, %s", 
+             config_cache.device_name, config_cache.zipcode, config_cache.user_name);
     
     return 0;
 }
@@ -105,6 +119,21 @@ int Device_Config__Get_Zipcode(char *zipcode, size_t max_len) {
     
     strncpy(zipcode, config_cache.zipcode, max_len - 1);
     zipcode[max_len - 1] = '\0';
+    return 0;
+}
+
+int Device_Config__Get_UserName(char *user_name, size_t max_len) {
+    if (user_name == NULL || max_len == 0) {
+        return -1;
+    }
+    
+    if (!config_cache.initialized) {
+        ESP_LOGW(TAG, "Config not initialized, call Device_Config__Init() first");
+        return -1;
+    }
+    
+    strncpy(user_name, config_cache.user_name, max_len - 1);
+    user_name[max_len - 1] = '\0';
     return 0;
 }
 
@@ -176,5 +205,186 @@ int Device_Config__Set_Zipcode(const char *zipcode) {
     config_cache.zipcode[sizeof(config_cache.zipcode) - 1] = '\0';
     
     ESP_LOGI(TAG, "Zipcode updated: %s", zipcode);
+    return 0;
+}
+
+int Device_Config__Set_UserName(const char *user_name) {
+    if (user_name == NULL) {
+        return -1;
+    }
+    
+    // Only write if different
+    if (strcmp(config_cache.user_name, user_name) == 0) {
+        ESP_LOGD(TAG, "User name unchanged, skipping write");
+        return 0;
+    }
+    
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
+        return -1;
+    }
+    
+    err = nvs_set_str(nvs_handle, "user_name", user_name);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write user name: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return -1;
+    }
+    
+    nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+    
+    strncpy(config_cache.user_name, user_name, sizeof(config_cache.user_name) - 1);
+    config_cache.user_name[sizeof(config_cache.user_name) - 1] = '\0';
+    
+    ESP_LOGI(TAG, "User name updated: %s", user_name);
+    return 0;
+}
+
+int Device_Config__Get_Client_Cert(char *cert_buffer, size_t buffer_size, size_t *actual_size) {
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
+        return -1;
+    }
+    
+    size_t required_size = 0;
+    err = nvs_get_blob(nvs_handle, "client_cert", NULL, &required_size);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Client certificate not found in NVS: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return -1;
+    }
+    
+    // If only querying size, return it
+    if (cert_buffer == NULL || buffer_size == 0) {
+        if (actual_size != NULL) {
+            *actual_size = required_size;
+        }
+        nvs_close(nvs_handle);
+        return 0;
+    }
+    
+    if (required_size > buffer_size) {
+        ESP_LOGE(TAG, "Buffer too small for certificate: %d > %d", required_size, buffer_size);
+        nvs_close(nvs_handle);
+        return -1;
+    }
+    
+    err = nvs_get_blob(nvs_handle, "client_cert", cert_buffer, &required_size);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read client certificate: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return -1;
+    }
+    
+    if (actual_size != NULL) {
+        *actual_size = required_size;
+    }
+    
+    nvs_close(nvs_handle);
+    ESP_LOGI(TAG, "Loaded client certificate from NVS (%d bytes)", required_size);
+    return 0;
+}
+
+int Device_Config__Get_Client_Key(char *key_buffer, size_t buffer_size, size_t *actual_size) {
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
+        return -1;
+    }
+    
+    size_t required_size = 0;
+    err = nvs_get_blob(nvs_handle, "client_key", NULL, &required_size);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Client key not found in NVS: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return -1;
+    }
+    
+    // If only querying size, return it
+    if (key_buffer == NULL || buffer_size == 0) {
+        if (actual_size != NULL) {
+            *actual_size = required_size;
+        }
+        nvs_close(nvs_handle);
+        return 0;
+    }
+    
+    if (required_size > buffer_size) {
+        ESP_LOGE(TAG, "Buffer too small for key: %d > %d", required_size, buffer_size);
+        nvs_close(nvs_handle);
+        return -1;
+    }
+    
+    err = nvs_get_blob(nvs_handle, "client_key", key_buffer, &required_size);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read client key: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return -1;
+    }
+    
+    if (actual_size != NULL) {
+        *actual_size = required_size;
+    }
+    
+    nvs_close(nvs_handle);
+    ESP_LOGI(TAG, "Loaded client key from NVS (%d bytes)", required_size);
+    return 0;
+}
+
+int Device_Config__Set_Client_Cert(const char *cert, size_t cert_len) {
+    if (cert == NULL || cert_len == 0) {
+        return -1;
+    }
+    
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
+        return -1;
+    }
+    
+    err = nvs_set_blob(nvs_handle, "client_cert", cert, cert_len);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write client certificate: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return -1;
+    }
+    
+    nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+    
+    ESP_LOGI(TAG, "Client certificate saved to NVS (%d bytes)", cert_len);
+    return 0;
+}
+
+int Device_Config__Set_Client_Key(const char *key, size_t key_len) {
+    if (key == NULL || key_len == 0) {
+        return -1;
+    }
+    
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
+        return -1;
+    }
+    
+    err = nvs_set_blob(nvs_handle, "client_key", key, key_len);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write client key: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return -1;
+    }
+    
+    nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+    
+    ESP_LOGI(TAG, "Client key saved to NVS (%d bytes)", key_len);
     return 0;
 }
