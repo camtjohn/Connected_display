@@ -363,13 +363,13 @@ void increase_brightness(void) {
 
 void blocking_thread_update_display(void *pvParameters) {
     while(1) {
-        // Wait for semaphore from event system
+        // Wait for semaphore from event system or timeout for periodic refresh
         TickType_t wait_ticks = (View_refresh_rate_ms == 0) ? DEFAULT_REFRESH_RATE_MS : pdMS_TO_TICKS(View_refresh_rate_ms);
 
-        if (xSemaphoreTake(displayUpdateSemaphore, wait_ticks) == pdTRUE) {
-            // Update display
-            build_new_view();
-            Led_driver__Update_RAM(View_red, View_green, View_blue);
-        }
+        xSemaphoreTake(displayUpdateSemaphore, wait_ticks);
+        
+        // Update display (whether triggered by UI event or timeout)
+        build_new_view();
+        Led_driver__Update_RAM(View_red, View_green, View_blue);
     }
 }

@@ -29,6 +29,7 @@ void Conway__Initialize(void) {
     restart_grid();
 }
 
+// Update view arrays with new conway frame
 uint16_t Conway__Get_frame(uint16_t * view_red, uint16_t * view_green, uint16_t * view_blue) {    
     // Copy new conway grid to views Red=Alive, Blue=Just died, Green=Just born
     for(uint8_t row=0; row<16; row++) {
