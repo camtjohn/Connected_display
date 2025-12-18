@@ -49,11 +49,21 @@ void event_dispatcher_task(void *pvParameters) {
             // ESP_LOGI(TAG, "Processing event type: %d, data: %lu", event.type, event.data);
             
             switch (event.type) {
-                case EVENT_UI_BUTTON_PRESS:
-                    // Check each button and post events for pressed ones
-                    for (int i = 0; i < 4; i++) {  // Assuming 4 buttons
+                case EVENT_UI_BUTTON_DOWN:
+                    // Button pressed (down)
+                    for (int i = 0; i < 4; i++) {
                         if (event.data & (1 << i)) {
                             View__Process_UI(1 << i);
+                        }
+                    }
+                    break;
+                    
+                case EVENT_UI_BUTTON_UP:
+                    // Button released (up) - most modules ignore this
+                    // Etchsketch module uses it to exit paint mode
+                    for (int i = 0; i < 4; i++) {
+                        if (event.data & (1 << i)) {
+                            View__Process_UI((1 << i) | 0x80);  // Mark as UP with high bit
                         }
                     }
                     break;

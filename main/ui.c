@@ -19,26 +19,36 @@ uint8_t Enc_array[4] = {ENC_1_A, ENC_1_B, ENC_2_A, ENC_2_B};
 // xxxx 2_B 2_A 1_B 1_A
 static volatile uint8_t Prev_encoder_states;
 
-// Task variables
+// Button interrupt handling
 TaskHandle_t periodicTaskHandle_btn = NULL;
-void periodic_task_poll_buttons(void *);
+void button_event_task(void *);
+
 // encoder interrupt handling
 TaskHandle_t periodicTaskHandle_enc = NULL; // now used for encoder event consumer
 void encoder_event_task(void *);
 
-// ISR queue for encoder pin changes
+// ISR queues for button and encoder pin changes
+static QueueHandle_t button_isr_queue = NULL;
 static QueueHandle_t encoder_isr_queue = NULL;
 
-// ISR handler prototype
+// ISR handlers
+static void IRAM_ATTR button_isr_handler(void *arg);
 static void IRAM_ATTR encoder_isr_handler(void *arg);
 
 // last observed pin level (indexed by Enc_array index). Updated in ISR to avoid repeated queuing
 static volatile uint8_t encoder_last_level[4] = {0,0,0,0};
 
+// last observed button pin levels (indexed by button index)
+static volatile uint8_t button_last_level[4] = {0,0,0,0};
+
+// Button pressed state (shared between button and encoder tasks for paint mode)
+static volatile uint8_t button_pressed_state[4] = {0,0,0,0};
+
 // Private prototypes
-uint8_t poll_btns(void);
-// uint8_t poll_encoders(void);
 void setup_gpio_input(uint8_t);
+
+// Public API to check button state (for paint mode, etc.)
+uint8_t Ui__Is_Button_Pressed(uint8_t button_num);
 
 // PUBLIC FUNCTIONS
 void Ui__Initialize(void) {
@@ -58,28 +68,37 @@ void Ui__Initialize(void) {
         encoder_last_level[enc] = (uint8_t)gpio_get_level(enc_pin_num);
     }
 
-    xTaskCreate(
-        periodic_task_poll_buttons,     // Task function
-        "PeriodicTask_PollButtons",     // Task name (for debugging)
-        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
-        NULL,                           // Task parameter
-        10,                             // Task priority
-        &periodicTaskHandle_btn         // Task handle
-    );
-
-    // Create queue for encoder ISR events
+    // Create queues for button and encoder ISR events
+    button_isr_queue = xQueueCreate(16, sizeof(uint32_t));
     encoder_isr_queue = xQueueCreate(16, sizeof(uint32_t));
 
-    // Install GPIO ISR service and attach handlers for encoder pins
+    // Install GPIO ISR service (once for all GPIO interrupts)
     gpio_install_isr_service(0);
+    
+    // Attach button interrupt handlers
+    for (uint8_t i = 0; i < 4; i++) {
+        uint8_t pin = Btn_array[i];
+        button_last_level[i] = (uint8_t)gpio_get_level(pin);
+        gpio_set_intr_type(pin, GPIO_INTR_ANYEDGE);
+        gpio_isr_handler_add(pin, button_isr_handler, (void*)(uintptr_t)pin);
+    }
+    
+    // Attach encoder interrupt handlers
     for (uint8_t i = 0; i < 4; i++) {
         uint8_t pin = Enc_array[i];
         gpio_set_intr_type(pin, GPIO_INTR_ANYEDGE);
-        // attach common ISR, pass pin number as arg
         gpio_isr_handler_add(pin, encoder_isr_handler, (void*)(uintptr_t)pin);
     }
 
-    // start consumer task that processes encoder ISR events and debounces
+    // start consumer tasks that process ISR events and debounce
+    xTaskCreate(
+        button_event_task,              // Task function
+        "ButtonEventTask",             // Task name (for debugging)
+        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
+        (void*)button_isr_queue,        // Task parameter -> queue handle
+        10,                             // Task priority
+        &periodicTaskHandle_btn         // Task handle
+    );
     xTaskCreate(
         encoder_event_task,             // Task function
         "EncoderEventTask",            // Task name (for debugging)
@@ -93,178 +112,88 @@ void Ui__Initialize(void) {
 
 // Private methods
 
-// check all buttons. return byte with bit set for buttons that are pressed
-// read/modify Btn_state to track prev state
-// Return: button number 1-4
-uint8_t poll_btns(void) {
-    uint8_t btn_events = 0;
+// Button ISR: push pin number to queue when edge detected
+static void IRAM_ATTR button_isr_handler(void *arg) {
+    uint32_t pin = (uint32_t)(uintptr_t)arg;
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    if (!button_isr_queue) return;
 
-    // If press btn, latch and do something. Only unlatch if detect no press.
-    for(uint8_t btn=0; btn < 4; btn++) {
-        uint8_t btn_num = Btn_array[btn];
-        uint8_t prev_state = (Btn_state >> btn) & 1;
-        uint8_t curr_state = gpio_get_level(btn_num);
+    // find index for this pin (0-3)
+    int idx = -1;
+    for (int i = 0; i < 4; ++i) {
+        if (Btn_array[i] == (uint8_t)pin) { idx = i; break; }
+    }
+    if (idx < 0) return;
 
-        if(prev_state == NOT_PRESSED) {
-            if(curr_state == PRESSED) {
-                Btn_state |= (1 << btn);
-                btn_events |= (1 << btn);
-            }
-        } else {        // previously btn pressed
-            if(curr_state == NOT_PRESSED) {
-                Btn_state &= ~(1 << btn);   // reset state to unpressed
-            }
-        }
+    // read level; only enqueue if different from last seen level for this pin
+    uint8_t level = (uint8_t)gpio_get_level((gpio_num_t)pin);
+    if (level == button_last_level[idx]) {
+        return; // duplicate edge or noise already processed
     }
 
-    return (btn_events);
+    // update last level (done in ISR context)
+    button_last_level[idx] = level;
+
+    xQueueSendFromISR(button_isr_queue, &pin, &xHigherPriorityTaskWoken);
+    if (xHigherPriorityTaskWoken) portYIELD_FROM_ISR();
 }
 
-// // read encoders. return direction of rotation if there is one.
-// uint8_t poll_encoders(void) {
-//     uint8_t enc_events = 0;
-//     uint8_t curr_encoder_states = 0;
-
-//     // read current encoder pins into bits
-//     for(uint8_t enc=0; enc < 4; enc++) {
-//         curr_encoder_states |= (gpio_get_level(Enc_array[enc]) << enc);
-//     }
-
-//     if (curr_encoder_states != Prev_encoder_states) {   // an encoder moved, not necessarily full event
-//         // Simple debounce: re-read after small delay and require stability
-//         vTaskDelay(pdMS_TO_TICKS(2));
-//         uint8_t curr_encoder_states2 = 0;
-//         for(uint8_t enc=0; enc < 4; enc++) {
-//             curr_encoder_states2 |= (gpio_get_level(Enc_array[enc]) << enc);
-//         }
-
-//         if (curr_encoder_states2 != curr_encoder_states) {
-//             // noisy transition; update snapshot and skip
-//             Prev_encoder_states = curr_encoder_states2;
-//             return 0;
-//         }
-
-//         // enc 1 (bits 0-1)
-//         if ((curr_encoder_states & 3) == 3) {   // current state at detent
-//             if ((Prev_encoder_states & 3) == 1) {
-//                 enc_events |= 0x10;     // enc1 CW
-//             } else if ((Prev_encoder_states & 3) == 2) {
-//                 enc_events |= 0x20;     // enc1 CCW
-//             }
-//         }
-//         // enc 2 (bits 2-3)
-//         if (((curr_encoder_states >> 2) & 3) == 3) {   // current state at detent
-//             if (((Prev_encoder_states >> 2) & 3) == 1) {
-//                 enc_events |= 0x40;     // enc2 CW
-//             } else if (((Prev_encoder_states >> 2) & 3) == 2) {
-//                 enc_events |= 0x80;     // enc2 CCW
-//             }
-//         }
-//     }
-
-//     if (enc_events) {
-//         // ESP_LOGI(TAG, "enc events: curr=0x%02x prev=0x%02x events=0x%02x",
-//                 //  curr_encoder_states, Prev_encoder_states, enc_events);
-//     }
-
-//     Prev_encoder_states = curr_encoder_states;
-
-//     return enc_events;
-// }
-
-
-// // New event-driven functions that return state without directly processing
-// uint8_t btns_interrupt_get_state(void) {
-//     uint8_t btn_events = 0;
-
-//     // If press btn, latch and do something. Only unlatch if detect no press.
-//     for(uint8_t btn=0; btn < 4; btn++) {
-//         uint8_t btn_num = Btn_array[btn];
-//         uint8_t prev_state = (Btn_state >> btn) & 1;
-//         uint8_t curr_state = gpio_get_level(btn_num);
-
-//         if(prev_state == NOT_PRESSED) {
-//             if(curr_state == PRESSED) {
-//                 Btn_state |= (1 << btn);
-//                 btn_events |= (1 << btn);
-//             }
-//         } else {        // previously btn pressed
-//             if(curr_state == NOT_PRESSED) {
-//                 Btn_state &= ~(1 << btn);   // reset state to unpressed
-//             }
-//         }
-//     }
-
-//     return btn_events;
-// }
-
-// uint8_t encoders_interrupt_get_state(void) {
-//     uint8_t enc_events = 0;
-//     uint8_t curr_encoder_states = 0;
-//     for(uint8_t enc=0; enc < 4; enc++) {
-//         curr_encoder_states |= (gpio_get_level(Enc_array[enc]) << enc);
-//     }
-
-//     if (curr_encoder_states != Prev_encoder_states) {   // an encoder moved, not necessarily full event
-//         // enc 1
-//         if ((curr_encoder_states & 3) == 3) {   // current state at detent
-//             if ((Prev_encoder_states & 3) == 1) {
-//                 enc_events |= 0x10;     // enc1 CW
-//             } else if ((Prev_encoder_states & 3) == 2) {
-//                 enc_events |= 0x20;     // enc1 CCW
-//             }
-//         }
-//         // enc 2
-//         if ((curr_encoder_states >> 2) == 3) {   // current state at detent
-//             if ((Prev_encoder_states >> 2) == 1) {
-//                 enc_events |= 0x40;     // enc2 CW
-//             } else if ((Prev_encoder_states >> 2) == 2) {
-//                 enc_events |= 0x80;     // enc2 CCW
-//             }
-//         }
-//     }
-//     Prev_encoder_states = curr_encoder_states;
-//     return enc_events;
-// }
-
-
-// // Define task: Periodically poll encoders (now posts events instead of direct processing)
-// void periodic_task_poll_encoders(void *pvParameters) {
-//     // After method runs, delay for this amount of ms
-//     const TickType_t run_every_ms = pdMS_TO_TICKS(UI_ENCODER_TASK_PERIOD_MS);
+// Consumer task: debounce and post button down/up events
+void button_event_task(void *pvParameters) {
+    QueueHandle_t q = (QueueHandle_t)pvParameters;
+    const TickType_t debounce_ticks = pdMS_TO_TICKS(UI_BUTTON_DEBOUNCE_MS);
+    const TickType_t refractory_ticks = pdMS_TO_TICKS(UI_BUTTON_REFRACTORY_MS);
     
-//     while (1) {
-//         TickType_t time_start_task = xTaskGetTickCount();
-        
-//         // Poll encoders and post events for any rotation
-//         // encoder events:  enc1 rotate CW: set bit0, rotate CCW: set bit1
-//         //                  enc2 rotate CW: set bit2, rotate CCW: set bit3
-//         uint8_t encoder_events = poll_encoders();
-        
-//         if (encoder_events) {
-//             EventSystem_PostEvent(EVENT_UI_ENCODER, encoder_events, NULL);  // Encoder 0
-//         }
-//         vTaskDelayUntil(&time_start_task, run_every_ms);
-//     }
-// }
+    // Track button state
+    uint8_t pressed[4] = {0, 0, 0, 0};
+    TickType_t next_allowed[4] = {0, 0, 0, 0};
 
-// Define task: Periodically poll buttons (now posts events instead of direct processing)
-void periodic_task_poll_buttons(void *pvParameters) {
-    // After method runs, delay for this amount of ms
-    const TickType_t run_every_ms = pdMS_TO_TICKS(UI_BUTTON_TASK_PERIOD_MS);
-    
     while (1) {
-        TickType_t time_start_task = xTaskGetTickCount();
-        
-        // Poll buttons and post events for any pressed buttons
-        // Note: This would ideally be replaced with interrupt-driven GPIO handling
-        uint8_t button_states = poll_btns();
-        
-        if (button_states) {
-            EventSystem_PostEvent(EVENT_UI_BUTTON_PRESS, button_states, NULL);
+        uint32_t pin;
+        if (xQueueReceive(q, &pin, pdMS_TO_TICKS(10)) == pdTRUE) {
+            // find which button
+            int idx = -1;
+            for (int i = 0; i < 4; i++) {
+                if (Btn_array[i] == (uint8_t)pin) { idx = i; break; }
+            }
+            if (idx < 0) continue;
+
+            TickType_t now = xTaskGetTickCount();
+            if (now < next_allowed[idx]) {
+                continue; // still in refractory window
+            }
+
+            // Debounce: sample, wait, resample
+            uint8_t sample1 = gpio_get_level((gpio_num_t)pin);
+            vTaskDelay(debounce_ticks);
+            uint8_t sample2 = gpio_get_level((gpio_num_t)pin);
+            
+            if (sample1 != sample2) {
+                // unstable, skip this transient
+                next_allowed[idx] = xTaskGetTickCount() + pdMS_TO_TICKS(5);
+                continue;
+            }
+
+            uint8_t is_pressed = (sample2 == PRESSED);
+
+            if (is_pressed && !pressed[idx]) {
+                // Button just pressed
+                pressed[idx] = 1;
+                button_pressed_state[idx] = 1;  // Update shared state for encoder task
+                ESP_LOGI(TAG, "Button %d DOWN", idx + 1);
+                EventSystem_PostEvent(EVENT_UI_BUTTON_DOWN, (1 << idx), NULL);
+            } 
+            else if (!is_pressed && pressed[idx]) {
+                // Button just released
+                pressed[idx] = 0;
+                button_pressed_state[idx] = 0;  // Update shared state for encoder task
+                ESP_LOGI(TAG, "Button %d UP", idx + 1);
+                EventSystem_PostEvent(EVENT_UI_BUTTON_UP, (1 << idx), NULL);
+                
+                // Set refractory period to avoid bounce
+                next_allowed[idx] = xTaskGetTickCount() + refractory_ticks;
+            }
         }
-        
-        vTaskDelayUntil(&time_start_task, run_every_ms);
     }
 }
 
@@ -350,6 +279,18 @@ void encoder_event_task(void *pvParameters) {
             if (enc_events) {
                 // ESP_LOGI(TAG, "enc events (ISR): encoder=%d bits=0x%02x prev=0x%02x events=0x%02x",
                 //          encoder, encbits, prev, enc_events);
+                
+                // Check if any button is currently held (for paint mode in etchsketch)
+                // The view module can check button_pressed_state[] to enable paint trail
+                uint8_t any_button_held = 0;
+                for (int i = 0; i < 4; i++) {
+                    if (button_pressed_state[i]) {
+                        any_button_held = 1;
+                        // ESP_LOGI(TAG, "Encoder rotated while Button %d held (paint mode)", i + 1);
+                        break;
+                    }
+                }
+                
                 // post event; if the event system queue is full we will drop the event to avoid blocking ISR
                 EventSystem_PostEvent(EVENT_UI_ENCODER, enc_events, NULL);
                 // suppress further events for a short refractory period to avoid floods
@@ -364,7 +305,13 @@ void encoder_event_task(void *pvParameters) {
 
 void setup_gpio_input(uint8_t pin) {
     gpio_reset_pin(pin);
-    gpio_set_direction(pin, GPIO_MODE_INPUT);
+ 
+
+// Check if a specific button is currently pressed (button_num: 1-4)
+uint8_t Ui__Is_Button_Pressed(uint8_t button_num) {
+    if (button_num < 1 || button_num > 4) return 0;
+    return button_pressed_state[button_num - 1];
+}   gpio_set_direction(pin, GPIO_MODE_INPUT);
     // enable internal pull-up to avoid floating inputs; adjust to PULLDOWN if your hardware is active-high
     gpio_set_pull_mode(pin, GPIO_PULLUP_ONLY);
 }
