@@ -91,10 +91,22 @@ void View__Initialize() {
 }
 
 // Event system calls this to set UI event bits
-// UI_event bits: 0=btn1, 1=btn2, 2=btn3, 3=btn4, 4=enc1_cw, 5=enc1_ccw, 6=enc2_cw, 7=enc2_ccw
+// For BUTTON_DOWN: bits 0-3 = button 1-4, bit 7 = 0
+// For BUTTON_UP: bits 0-3 = button 1-4, bit 7 = 1 (marked with 0x80)
+// For ENCODER: bits 4-7 = encoder events
 void View__Process_UI(uint8_t UI_event) {
-    // First button: switch between menu and a module view
-    if(UI_event & 0x01) {
+    // Check if this is a BUTTON_UP event (marked with 0x80)
+    uint8_t is_button_up = (UI_event & 0x80);
+    
+    // Skip BUTTON_UP events for most views
+    // Only etchsketch will handle UP events (to exit paint mode)
+    if (is_button_up && View_current_view != VIEW_ETCHSKETCH) {
+        // This is a BUTTON_UP event - ignore for menu, weather, conway
+        return;
+    }
+    
+    // First button: switch between menu and a module view (button DOWN only)
+    if((UI_event & 0x01) && !is_button_up) {
         if (View_current_view == VIEW_MENU) {
             View_current_view = Menu__Get_current_view();
             build_new_view();
@@ -178,27 +190,41 @@ void View__Process_UI(uint8_t UI_event) {
         }
         break;
     case VIEW_ETCHSKETCH:
-        // Buttons
-        if(UI_event & 0x02) {   //btn2
-            Etchsketch__UI_Button(1);
-        }
-        if(UI_event & 0x04) {   //btn3
-            Etchsketch__UI_Button(2);
-        }
-        if(UI_event & 0x08) {   //btn4
-            Etchsketch__UI_Button(3);
-        }
-        //enc1
-        if(UI_event & 0x10) {
-            Etchsketch__UI_Encoder_Top(0);
-        } else if(UI_event & 0x20) {
-            Etchsketch__UI_Encoder_Top(1);
-        }
-        //enc2
-        if(UI_event & 0x40) {
-            Etchsketch__UI_Encoder_Side(0);
-        } else if(UI_event & 0x80) {
-            Etchsketch__UI_Encoder_Side(1);
+        if (is_button_up) {
+            // Handle button release events for paint mode
+            if(UI_event & 0x02) {   // btn2 released
+                Etchsketch__UI_Button_Released(1);
+            }
+            if(UI_event & 0x04) {   // btn3 released
+                Etchsketch__UI_Button_Released(2);
+            }
+            if(UI_event & 0x08) {   // btn4 released
+                Etchsketch__UI_Button_Released(3);
+            }
+        } else {
+            // Handle button press and encoder events (as before)
+            // Buttons
+            if(UI_event & 0x02) {   //btn2
+                Etchsketch__UI_Button(1);
+            }
+            if(UI_event & 0x04) {   //btn3
+                Etchsketch__UI_Button(2);
+            }
+            if(UI_event & 0x08) {   //btn4
+                Etchsketch__UI_Button(3);
+            }
+            //enc1
+            if(UI_event & 0x10) {
+                Etchsketch__UI_Encoder_Top(0);
+            } else if(UI_event & 0x20) {
+                Etchsketch__UI_Encoder_Top(1);
+            }
+            //enc2
+            if(UI_event & 0x40) {
+                Etchsketch__UI_Encoder_Side(0);
+            } else if(UI_event & 0x80) {
+                Etchsketch__UI_Encoder_Side(1);
+            }
         }
         break;
     case NUM_MAIN_VIEWS:
