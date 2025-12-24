@@ -305,13 +305,13 @@ void encoder_event_task(void *pvParameters) {
 
 void setup_gpio_input(uint8_t pin) {
     gpio_reset_pin(pin);
- 
+    gpio_set_direction(pin, GPIO_MODE_INPUT);
+    // enable internal pull-up to avoid floating inputs; adjust to PULLDOWN if your hardware is active-high
+    gpio_set_pull_mode(pin, GPIO_PULLUP_ONLY);
+}
 
 // Check if a specific button is currently pressed (button_num: 1-4)
 uint8_t Ui__Is_Button_Pressed(uint8_t button_num) {
     if (button_num < 1 || button_num > 4) return 0;
     return button_pressed_state[button_num - 1];
-}   gpio_set_direction(pin, GPIO_MODE_INPUT);
-    // enable internal pull-up to avoid floating inputs; adjust to PULLDOWN if your hardware is active-high
-    gpio_set_pull_mode(pin, GPIO_PULLUP_ONLY);
 }

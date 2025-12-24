@@ -91,12 +91,14 @@ void View__Initialize() {
 }
 
 // Event system calls this to set UI event bits
-// For BUTTON_DOWN: bits 0-3 = button 1-4, bit 7 = 0
-// For BUTTON_UP: bits 0-3 = button 1-4, bit 7 = 1 (marked with 0x80)
-// For ENCODER: bits 4-7 = encoder events
-void View__Process_UI(uint8_t UI_event) {
-    // Check if this is a BUTTON_UP event (marked with 0x80)
-    uint8_t is_button_up = (UI_event & 0x80);
+// Encoding rules (16-bit):
+// - BUTTON_DOWN: bits 0-3 = button 1-4, bit 8 = 0
+// - BUTTON_UP:   bits 0-3 = button 1-4, bit 8 = 1 (0x100)
+// - ENCODER:     bits 4-7 = encoder events (0x10, 0x20 for top; 0x40, 0x80 for side)
+void View__Process_UI(uint16_t UI_event) {
+    // Check if this is a button UP event using bit 8
+    uint8_t button_bits = (UI_event & 0x0F);
+    uint8_t is_button_up = (button_bits != 0) && (UI_event & 0x100);
     
     // Skip BUTTON_UP events for most views
     // Only etchsketch will handle UP events (to exit paint mode)
@@ -242,48 +244,6 @@ void View__Process_UI(uint8_t UI_event) {
 void post_event(event_type_t type, uint32_t data) {
     EventSystem_PostEvent(type, data, NULL);
 }
-
-// // Assemble custom view
-// void View__Build_view_custom(uint16_t * view) {
-//     memset(view, 0, 16*2);
-//    
-//     // Upper-left "CJ"
-//     sprite spriteC;
-//     build_sprite_generic(&spriteC, 5, 3, sprite_letter_C);
-//     add_sprite(view, spriteC, 0, 13);
-//
-//     sprite spriteJ;
-//     build_sprite_generic(&spriteJ, 5, 4, sprite_letter_J);
-//     add_sprite(view, spriteJ, 0, 8);
-//
-//     // Lower-right "AJ"
-//     sprite spriteA;
-//     build_sprite_generic(&spriteA, 5, 3, sprite_letter_A);
-//     add_sprite(view, spriteA, 10, 5);
-//
-//     add_sprite(view, spriteJ, 10, 0);
-//
-//     // Middle heart
-//     sprite spriteHeart;
-//     build_sprite_generic(&spriteHeart, 6, 6, sprite_symbol_heart);
-//     add_sprite(view, spriteHeart, 6, 7);
-// }
-
-// On UI event, module can request change view
-// void View__Change_view(uint8_t direction) {
-//     if(direction == 0) {
-//         View_current_view ++;
-//         if(View_current_view == NUM_MAIN_VIEWS) {
-//             View_current_view = VIEW_WEATHER;
-//         }
-//     } else {
-//         if(View_current_view == VIEW_WEATHER) {
-//             View_current_view = NUM_MAIN_VIEWS - 1;
-//         } else {
-//             View_current_view --;
-//         }
-//     }
-// }
 
 void View__Change_brightness(uint8_t direction) {
     if(direction == 0) {

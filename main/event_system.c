@@ -63,7 +63,7 @@ void event_dispatcher_task(void *pvParameters) {
                     // Etchsketch module uses it to exit paint mode
                     for (int i = 0; i < 4; i++) {
                         if (event.data & (1 << i)) {
-                            View__Process_UI((1 << i) | 0x80);  // Mark as UP with high bit
+                            View__Process_UI((1 << i) | 0x100);  // Mark as UP with bit 8
                         }
                     }
                     break;

@@ -39,7 +39,7 @@ typedef enum {
 
 //PUBLIC FUNCTION
 void View__Initialize();
-void View__Process_UI(uint8_t);
+void View__Process_UI(uint16_t);
 void View__Set_display_state(uint8_t state);
 void View__Change_brightness(uint8_t);
 #endif
