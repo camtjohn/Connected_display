@@ -32,8 +32,8 @@ void Conway__Initialize(void) {
 // Update view arrays with new conway frame
 uint16_t Conway__Get_frame(uint16_t * view_red, uint16_t * view_green, uint16_t * view_blue) {    
     // Copy new conway grid to views Red=Alive, Blue=Just died, Green=Just born
-    for(uint8_t row=0; row<16; row++) {
-        for(uint8_t col=0; col<16; col++) {
+    for(uint8_t row=0; row<CONWAY_GRID_SIZE; row++) {
+        for(uint8_t col=0; col<CONWAY_GRID_SIZE; col++) {
             if(Conway_grid[row][col] == 1) {    // Just died
                 view_blue[row] |= (1 << col);
             } else if(Conway_grid[row][col] == 2) { // Continues alive
@@ -46,7 +46,7 @@ uint16_t Conway__Get_frame(uint16_t * view_red, uint16_t * view_green, uint16_t 
 
     // If the red cells are staying the same over 3 frames, re initialize grid
     uint8_t updated_buffer = 0;
-    for(uint8_t row=0; row<16; row++) {
+    for(uint8_t row=0; row<CONWAY_GRID_SIZE; row++) {
         if(view_red[row] != Prev_frame[row]) {
             updated_buffer = 1;
         }
@@ -55,6 +55,8 @@ uint16_t Conway__Get_frame(uint16_t * view_red, uint16_t * view_green, uint16_t 
 
     if(updated_buffer == 0) {
         Count_same_frames ++;
+    } else {
+        Count_same_frames = 0;
     }
 
     if(Count_same_frames < 3) {
@@ -115,12 +117,14 @@ void restart_grid(void) {
 
 uint8_t count_neighbors(uint8_t row, uint8_t col) {
     uint8_t count = 0;
-    for (uint8_t i = row - 1; i <= row + 1; i++) {
-        for (uint8_t j = col - 1; j <= col + 1; j++) {
-            if ((i < CONWAY_GRID_SIZE) &&       // neighbor is within boundary, negative 1 is 255
-                (j < CONWAY_GRID_SIZE) &&       // neighbor is within boundary
-                (i != row || j != col) &&           // neighbor is not the cell itself
-                (Conway_grid[i][j] > 1)) {          // neighbor is alive
+    uint8_t start_row = (row == 0) ? 0 : row - 1;
+    uint8_t end_row = (row + 1 >= CONWAY_GRID_SIZE) ? CONWAY_GRID_SIZE - 1 : row + 1;
+    uint8_t start_col = (col == 0) ? 0 : col - 1;
+    uint8_t end_col = (col + 1 >= CONWAY_GRID_SIZE) ? CONWAY_GRID_SIZE - 1 : col + 1;
+
+    for (uint8_t i = start_row; i <= end_row; i++) {
+        for (uint8_t j = start_col; j <= end_col; j++) {
+            if ((i != row || j != col) && (Conway_grid[i][j] > 1)) {
                 count++;
             }
         }
