@@ -1,6 +1,8 @@
 #ifndef SPRITE_H
 #define SPRITE_H
 
+#include "view.h"
+
 typedef enum {
     RED = 0,
     GREEN,
@@ -26,6 +28,6 @@ typedef struct {
     uint16_t* data_arr;
 } Sprite_generic;
 
-void Sprite__Add_sprite(SPRITE_TYPE, COLOR_TYPE, uint8_t, uint16_t*, uint16_t*, uint16_t*);
+void Sprite__Add_sprite(SPRITE_TYPE, COLOR_TYPE, uint8_t, view_frame_t*);
 
 #endif

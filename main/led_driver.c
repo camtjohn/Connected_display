@@ -52,10 +52,10 @@ void Led_driver__Setup(void) {
     send_setup_messages(CS_BLUE);
 }
 
-void Led_driver__Update_RAM(uint16_t *view_red, uint16_t *view_green, uint16_t *view_blue) {
+void Led_driver__Update_RAM(view_frame_t *frame) {
     //translate view to RAM
-    translate_views_to_RAM_red(view_red, view_green, RAM_red);
-    translate_views_to_RAM_blue(view_red, view_green, view_blue, RAM_blue);
+    translate_views_to_RAM_red(frame->red, frame->green, RAM_red);
+    translate_views_to_RAM_blue(frame->red, frame->green, frame->blue, RAM_blue);
 
     update_RAM(CS_RED, RAM_red);
     update_RAM(CS_BLUE, RAM_blue);

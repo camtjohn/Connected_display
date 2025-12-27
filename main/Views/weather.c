@@ -15,7 +15,7 @@ static Weather_data_type Weather_tomorrow;   // max_temp, precip_percent, moon p
 static Weather_data_type Weather_next_day;   // max_temp, precip_percent, moon phase
 
 // PRIVATE METHODS
-void build_view(uint16_t *, uint16_t *, uint16_t *);
+void build_view(view_frame_t *);
 uint8_t update_stored_value(uint8_t*, uint8_t);
 
 // PUBLIC METHODS
@@ -29,8 +29,8 @@ void Weather__Initialize(void) {
     Weather_today.moon = 200;
 }
 
-void Weather__Get_view(uint16_t * view_red, uint16_t * view_green, uint16_t * view_blue) {
-    build_view(view_red, view_green, view_blue);
+void Weather__Get_view(view_frame_t *frame) {
+    build_view(frame);
 }
 
 // Update view if any weather values changed. Called from mqtt module when receive msg
@@ -121,23 +121,23 @@ void Weather__UI_Button(uint8_t btn) {
 
 // PRIVATE METHODS
 
-void build_view(uint16_t * view_red, uint16_t * view_green, uint16_t * view_blue) {
+void build_view(view_frame_t *frame) {
     if(Internal_view_type == DAY0) {
-        Sprite__Add_sprite(MAX_TEMP, RED, Weather_today.max_temp, view_red, view_green, view_blue);
-        Sprite__Add_sprite(CURRENT_TEMP, GREEN, Weather_today.current_temp, view_red, view_green, view_blue);
+        Sprite__Add_sprite(MAX_TEMP, RED, Weather_today.max_temp, frame);
+        Sprite__Add_sprite(CURRENT_TEMP, GREEN, Weather_today.current_temp, frame);
 
         // Only show precip if between 1 and 100. If 100, show all diagonal symbols
         if((Weather_today.precip > 0)) {
-            Sprite__Add_sprite(PRECIP, BLUE, Weather_today.precip, view_red, view_green, view_blue);
+            Sprite__Add_sprite(PRECIP, BLUE, Weather_today.precip, frame);
         }
 
         // Lower-left symbol: Moon icon
         if(Weather_today.moon > 0) {
-            Sprite__Add_sprite(MOON, WHITE, Weather_today.moon, view_red, view_green, view_blue);
+            Sprite__Add_sprite(MOON, WHITE, Weather_today.moon, frame);
         }
         
     } else if(Internal_view_type == DAY1) {
-        Sprite__Add_sprite(MAX_TEMP, RED, Weather_tomorrow.max_temp, view_red, view_green, view_blue);
+        Sprite__Add_sprite(MAX_TEMP, RED, Weather_tomorrow.max_temp, frame);
         // Get number corresponding to day of the week of today (0=Sun, 1=Mon...)
         uint8_t day_of_week = Local_Time__Get_letter_day_of_week();
         if (day_of_week < 7) {  // valid day of week
@@ -145,22 +145,22 @@ void build_view(uint16_t * view_red, uint16_t * view_green, uint16_t * view_blue
             if (day_of_week > 6) {
                 day_of_week = 0;
             }
-            Sprite__Add_sprite(LETTER, GREEN, day_of_week, view_red, view_green, view_blue);
+            Sprite__Add_sprite(LETTER, GREEN, day_of_week, frame);
         }
         
         // Only show precip if between 1 and 100. If 100, show all diagonal symbols
         if((Weather_tomorrow.precip > 0)) {
-            Sprite__Add_sprite(PRECIP, BLUE, Weather_tomorrow.precip, view_red, view_green, view_blue);
+            Sprite__Add_sprite(PRECIP, BLUE, Weather_tomorrow.precip, frame);
             // ESP_LOGI(TAG, "precip: %u\n", Weather_tomorrow.precip);
         }
 
         // Lower-left symbol: Moon icon
         if(Weather_tomorrow.moon) {
-            Sprite__Add_sprite(MOON, WHITE, Weather_tomorrow.moon, view_red, view_green, view_blue);
+            Sprite__Add_sprite(MOON, WHITE, Weather_tomorrow.moon, frame);
         }
     
     } else if(Internal_view_type == DAY2) {
-        Sprite__Add_sprite(MAX_TEMP, RED, Weather_next_day.max_temp, view_red, view_green, view_blue);
+        Sprite__Add_sprite(MAX_TEMP, RED, Weather_next_day.max_temp, frame);
         // Get number corresponding to day of the week of today (0=Sun, 1=Mon...)
         uint8_t day_of_week = Local_Time__Get_letter_day_of_week();
         if (day_of_week < 7) {  // valid day of week
@@ -168,17 +168,17 @@ void build_view(uint16_t * view_red, uint16_t * view_green, uint16_t * view_blue
             if (day_of_week > 6) {
                 day_of_week = day_of_week - 7;
             }
-            Sprite__Add_sprite(LETTER, GREEN, day_of_week, view_red, view_green, view_blue);
+            Sprite__Add_sprite(LETTER, GREEN, day_of_week, frame);
         }
         
         // Only show precip if between 1 and 100. If 100, show all diagonal symbols
         if((Weather_next_day.precip > 0)) {
-            Sprite__Add_sprite(PRECIP, BLUE, Weather_next_day.precip, view_red, view_green, view_blue);
+            Sprite__Add_sprite(PRECIP, BLUE, Weather_next_day.precip, frame);
         }
 
         // Lower-left symbol: Moon icon
         if(Weather_next_day.moon) {
-            Sprite__Add_sprite(MOON, WHITE, Weather_next_day.moon, view_red, view_green, view_blue);
+            Sprite__Add_sprite(MOON, WHITE, Weather_next_day.moon, frame);
         }
     }
 }

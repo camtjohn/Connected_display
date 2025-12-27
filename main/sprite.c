@@ -68,7 +68,7 @@ void add_sprite_null(uint16_t*, uint8_t, uint8_t);
 
 // PUBLIC METHODS
 
-void Sprite__Add_sprite(SPRITE_TYPE sprite, COLOR_TYPE color, uint8_t value, uint16_t *view_red, uint16_t *view_green, uint16_t *view_blue) {
+void Sprite__Add_sprite(SPRITE_TYPE sprite, COLOR_TYPE color, uint8_t value, view_frame_t *frame) {
     uint16_t *ptr_view;
     uint16_t *ptr_view2;
     uint16_t *ptr_view3;
@@ -76,41 +76,41 @@ void Sprite__Add_sprite(SPRITE_TYPE sprite, COLOR_TYPE color, uint8_t value, uin
 
     switch(color) {
         case RED:
-            ptr_view = view_red;
-            ptr_view2 = view_red;
+            ptr_view = frame->red;
+            ptr_view2 = frame->red;
             break;
         case GREEN:
-            ptr_view = view_green;
-            ptr_view2 = view_green;
+            ptr_view = frame->green;
+            ptr_view2 = frame->green;
             break;
         case BLUE:
-            ptr_view = view_blue;
-            ptr_view2 = view_blue;
+            ptr_view = frame->blue;
+            ptr_view2 = frame->blue;
             break;
         case YELLOW:
-            ptr_view = view_red;
-            ptr_view2 = view_green;
+            ptr_view = frame->red;
+            ptr_view2 = frame->green;
             num_ptrs = 2;
             break;
         case CYAN:
-            ptr_view = view_green;
-            ptr_view2 = view_blue;
+            ptr_view = frame->green;
+            ptr_view2 = frame->blue;
             num_ptrs = 2;
             break;
         case PURPLE:
-            ptr_view = view_blue;
-            ptr_view2 = view_red;
+            ptr_view = frame->blue;
+            ptr_view2 = frame->red;
             num_ptrs = 2;
             break;
         case WHITE:
-            ptr_view = view_blue;
-            ptr_view2 = view_red;
-            ptr_view3 = view_green;
+            ptr_view = frame->blue;
+            ptr_view2 = frame->red;
+            ptr_view3 = frame->green;
             num_ptrs = 3;
             break;
         default:
-            ptr_view = view_red;
-            ptr_view2 = view_red;
+            ptr_view = frame->red;
+            ptr_view2 = frame->red;
             break;
     }
 
@@ -151,41 +151,41 @@ void Sprite__Add_sprite(SPRITE_TYPE sprite, COLOR_TYPE color, uint8_t value, uin
 
         case MOON:
             if (value == 2) {
-                add_sprite_generic_small(view_red, 11, 10, sprite_full_moon, 4);
-                add_sprite_generic_small(view_green, 11, 10, sprite_full_moon, 4);
-                add_sprite_generic_small(view_blue, 11, 10, sprite_full_moon, 4);
+                add_sprite_generic_small(frame->red, 11, 10, sprite_full_moon, 4);
+                add_sprite_generic_small(frame->green, 11, 10, sprite_full_moon, 4);
+                add_sprite_generic_small(frame->blue, 11, 10, sprite_full_moon, 4);
             } else if (value == 1) {
-                add_sprite_generic_small(view_red, 11, 10, sprite_almost_full_moon, 4);
-                add_sprite_generic_small(view_green, 11, 10, sprite_almost_full_moon, 4);
-                add_sprite_generic_small(view_blue, 11, 10, sprite_almost_full_moon, 4);
+                add_sprite_generic_small(frame->red, 11, 10, sprite_almost_full_moon, 4);
+                add_sprite_generic_small(frame->green, 11, 10, sprite_almost_full_moon, 4);
+                add_sprite_generic_small(frame->blue, 11, 10, sprite_almost_full_moon, 4);
             }
             break;
 
         case LETTER:
             if(value == 0) {
-                add_sprite_generic_small(view_green, 10, 0, sprite_letter_SU, 5);
+                add_sprite_generic_small(frame->green, 10, 0, sprite_letter_SU, 5);
             } else if (value == 1) {
-                add_sprite_generic_small(view_green, 10, 0, sprite_letter_M, 5);
+                add_sprite_generic_small(frame->green, 10, 0, sprite_letter_M, 5);
             } else if (value == 2) {
-                add_sprite_generic_small(view_green, 10, 0, sprite_letter_TU, 5);
+                add_sprite_generic_small(frame->green, 10, 0, sprite_letter_TU, 5);
             } else if (value == 3) {
-                add_sprite_generic_small(view_green, 10, 0, sprite_letter_W, 5);
+                add_sprite_generic_small(frame->green, 10, 0, sprite_letter_W, 5);
             } else if (value == 4) {
-                add_sprite_generic_small(view_green, 10, 0, sprite_letter_TH, 5);
+                add_sprite_generic_small(frame->green, 10, 0, sprite_letter_TH, 5);
             } else if (value == 5) {
-                add_sprite_generic_small(view_green, 10, 0, sprite_letter_F, 5);
+                add_sprite_generic_small(frame->green, 10, 0, sprite_letter_F, 5);
             } else if (value == 6) {
-                add_sprite_generic_small(view_green, 10, 0, sprite_letter_SA, 5);
+                add_sprite_generic_small(frame->green, 10, 0, sprite_letter_SA, 5);
             }
             break;
 
         case CUSTOM:
-            add_sprite_generic_small(view_red, 0, 0, sprite_vert_line, 4);
-            add_sprite_generic_small(view_green, 4, 0, sprite_vert_line, 4);
-            add_sprite_generic_small(view_blue, 8, 0, sprite_vert_line, 4);
-            add_sprite_generic_small(view_red, 12, 0, sprite_vert_line, 4);
-            add_sprite_generic_small(view_green, 12, 1, sprite_vert_line, 4);
-            add_sprite_generic_small(view_blue, 12, 2, sprite_vert_line, 4);
+            add_sprite_generic_small(frame->red, 0, 0, sprite_vert_line, 4);
+            add_sprite_generic_small(frame->green, 4, 0, sprite_vert_line, 4);
+            add_sprite_generic_small(frame->blue, 8, 0, sprite_vert_line, 4);
+            add_sprite_generic_small(frame->red, 12, 0, sprite_vert_line, 4);
+            add_sprite_generic_small(frame->green, 12, 1, sprite_vert_line, 4);
+            add_sprite_generic_small(frame->blue, 12, 2, sprite_vert_line, 4);
             break;
 
         default:

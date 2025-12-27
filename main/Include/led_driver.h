@@ -1,6 +1,8 @@
 #ifndef LED_DISPLAY_H
 #define LED_DISPLAY_H
 
+#include "view.h"
+
 // To set row LEDs according to bits, either use SPI or bit bang gpio
 #define USE_SPI_BIT_BANG     0
 
@@ -35,8 +37,7 @@
 
 void Led_driver__Initialize(void);
 void Led_driver__Setup(void);
-void Led_driver__Update_RAM(uint16_t*, uint16_t*, uint16_t*);
-void Led_driver__Update_RAM(uint16_t*, uint16_t*, uint16_t*);
+void Led_driver__Update_RAM(view_frame_t*);
 void Led_driver__Clear_RAM(void);
 void Led_driver__Set_brightness(uint8_t);
 void Led_driver__Toggle_LED(uint8_t);

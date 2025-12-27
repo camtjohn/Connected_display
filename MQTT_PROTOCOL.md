@@ -1,7 +1,7 @@
 # MQTT Binary Protocol Implementation
 
 ## Overview
-Successfully migrated MQTT messaging from string-based to binary protocol following the specification in `MQTT_PROTOCOL.md`.
+Successfully migrated MQTT messaging from string-based to binary protocol following the specification in `MQTT_PROTOCOL.md`. The protocol now also includes collaborative "Shared View" messages used by the Etchsketch canvas for multi-device drawing.
 
 ## Files Created
 
@@ -73,6 +73,51 @@ Complete refactoring to handle binary messages:
 ```
 - Version number for OTA update comparison
 
+### Shared View Protocol
+
+Collaborative drawing uses three message types on the `shared_view` topic:
+
+#### 0x20 - Shared View Request (header only)
+```
+[0x20][0x00]
+```
+- No payload. Requests a full frame from the publisher.
+
+#### 0x21 - Shared View Frame (payload: 2 + 16*2*3 bytes)
+```
+[0x21][len]
+  [seq_hi][seq_lo]
+  [red rows (16× uint16 row bitmasks)]
+  [green rows (16× uint16 row bitmasks)]
+  [blue rows (16× uint16 row bitmasks)]
+```
+- `seq`: 2-byte sequence number in network byte order (big-endian).
+- Row bitmasks: 16 rows per color, 2 bytes per row; each bit represents one column (0–15). Bytes are transmitted as raw uint16 values; receivers memcpy into their internal `uint16_t[16]` buffers.
+
+#### 0x22 - Shared View Updates (payload: 3 + N*3 bytes)
+```
+[0x22][len]
+  [seq_hi][seq_lo]
+  [count]
+  repeat count times:
+    [row][col][color]
+```
+- `seq`: 2-byte sequence number in network byte order (big-endian).
+- `count`: number of pixel update triplets.
+- Each update triplet contains 1-byte `row` (0–15), 1-byte `col` (0–15), and 1-byte `color` (0=red, 1=green, 2=blue).
+
+### Sequencing & Sync
+- Receivers track the last seen sequence. If an incoming `seq` is not exactly `last_seq + 1`, they log a gap and issue a `Shared View Request` to fetch a full frame.
+- Full frame messages reset the local view and update the tracked sequence to the frame’s `seq`.
+
+### Batching Behavior (Etchsketch)
+- Local drawing uses a batching queue managed by `Etchsketch__Begin_batch()`, `Etchsketch__Queue_local_pixel()`, and `Etchsketch__End_batch()`.
+- Pixels are queued as triplets; duplicate `(row,col)` entries update the color in-place.
+- Flush triggers:
+  - On `Etchsketch__End_batch()` (always flush any remaining queued pixels).
+  - When the queue size reaches the threshold (`FLUSH_THRESHOLD = 8`), an updates message is published immediately.
+- Each flush publishes a `Shared View Updates` message with the current `seq`, then increments the sender’s next sequence.
+
 ## Key Features
 
 1. **Binary Protocol Compliance**: Fully implements spec from MQTT_PROTOCOL.md
@@ -88,6 +133,11 @@ When testing, the MQTT broker should send messages in this format:
 - **Topic**: `weather/49085` for weather updates, `dev0` for version
 - **Payload**: Binary data following protocol specification
 - **Bootup**: Device publishes `"dev0,49085"` to `dev/bootup` on connection
+
+For shared view testing:
+- **Topic**: `shared_view`
+- **Payloads**: Use `0x21` for full frames and `0x22` for pixel updates, ensuring `seq` increments by 1 for each message.
+- **Sync**: To simulate a gap, skip a `seq` value; the device will request a full frame with `0x20`.
 
 ## Notes
 

@@ -12,6 +12,12 @@ extern SemaphoreHandle_t displayUpdateSemaphore;
 
 //PUBLIC TYPES
 
+typedef struct {
+    uint16_t red[16];
+    uint16_t green[16];
+    uint16_t blue[16];
+} view_frame_t;
+
 typedef enum {
     STATIC,
     DYNAMIC

@@ -1,6 +1,8 @@
 #ifndef WEATHER_H
 #define WEATHER_H
 
+#include "view.h"
+
 typedef enum {
   DAY0,
   DAY1,
@@ -19,7 +21,7 @@ typedef struct {
 
 //PUBLIC FUNCTION
 void Weather__Initialize(void);
-void Weather__Get_view(uint16_t *, uint16_t *, uint16_t *);
+void Weather__Get_view(view_frame_t *frame);
 void Weather__Update_values(uint8_t, uint8_t*, uint8_t);
 
 void Weather__UI_Encoder_Side(uint8_t);

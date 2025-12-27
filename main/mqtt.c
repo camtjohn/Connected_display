@@ -28,6 +28,7 @@
 #include "device_config.h"
 #include "local_time.h"
 #include "weather.h"
+#include "etchsketch.h"
 #include "ota.h"
 #include "main.h"
 
@@ -46,6 +47,8 @@ static void incoming_mqtt_handler(esp_mqtt_event_handle_t);
 static void process_current_weather(const uint8_t *payload, uint8_t payload_len);
 static void process_forecast_weather(const uint8_t *payload, uint8_t payload_len);
 static void check_and_trigger_ota_update(uint8_t server_version);
+static void process_shared_view_frame(const uint8_t *payload, uint8_t payload_len);
+static void process_shared_view_updates(const uint8_t *payload, uint8_t payload_len);
 
 static const char *TAG = "WEATHER_STATION: MQTT";
 
@@ -100,6 +103,9 @@ static void handle_mqtt_connected(esp_mqtt_client_handle_t client) {
     } else {
         ESP_LOGE(TAG, "Failed to read device config from NVS");
     }
+
+    // Shared view
+    esp_mqtt_client_subscribe(client, MQTT_TOPIC_SHARED_VIEW, 0);
 
     ESP_LOGI(TAG, "Subscribed successful, msg_id=%d", msg_id);
 }
@@ -345,6 +351,20 @@ static void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
             }
         }
     }
+    else if(strcmp(topic_str, MQTT_TOPIC_SHARED_VIEW) == 0) {
+        ESP_LOGI(TAG, "Message on SHARED_VIEW topic");
+        switch (header.type) {
+            case MSG_TYPE_SHARED_VIEW_FRAME:
+                process_shared_view_frame(payload, header.length);
+                break;
+            case MSG_TYPE_SHARED_VIEW_UPDATES:
+                process_shared_view_updates(payload, header.length);
+                break;
+            default:
+                ESP_LOGW(TAG, "Unknown shared view message type: 0x%02X", header.type);
+                break;
+        }
+    }
     else if(strcmp(topic_str, MQTT_TOPIC_DEV_SPECIFIC) == 0) {
         // Process version message
         if (header.type == MSG_TYPE_VERSION) {
@@ -390,7 +410,31 @@ static void process_current_weather(const uint8_t *payload, uint8_t payload_len)
     ESP_LOGI(TAG, "Updating current weather: %d°F", actual_temp);
     Weather__Update_values(0, weather_payload, 1);
 }
+static void process_shared_view_frame(const uint8_t *payload, uint8_t payload_len) {
+    mqtt_shared_view_frame_t frame;
+    if (mqtt_protocol_parse_shared_view_frame(payload, payload_len, &frame) != 0) {
+        ESP_LOGE(TAG, "Failed to parse shared view frame");
+        return;
+    }
+    Etchsketch__Apply_remote_frame(&frame);
+    if (displayUpdateSemaphore) {
+        xSemaphoreGive(displayUpdateSemaphore);
+    }
+}
 
+static void process_shared_view_updates(const uint8_t *payload, uint8_t payload_len) {
+    mqtt_shared_pixel_update_t updates[32];
+    uint8_t count = 0;
+    uint16_t seq = 0;
+    if (mqtt_protocol_parse_shared_view_updates(payload, payload_len, updates, 32, &count, &seq) != 0) {
+        ESP_LOGE(TAG, "Failed to parse shared view updates");
+        return;
+    }
+    Etchsketch__Apply_remote_updates(updates, count, seq);
+    if (displayUpdateSemaphore) {
+        xSemaphoreGive(displayUpdateSemaphore);
+    }
+}
 // Process forecast weather message
 static void process_forecast_weather(const uint8_t *payload, uint8_t payload_len) {
     mqtt_forecast_weather_t forecast;

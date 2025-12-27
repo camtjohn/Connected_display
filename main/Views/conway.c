@@ -30,16 +30,16 @@ void Conway__Initialize(void) {
 }
 
 // Update view arrays with new conway frame
-uint16_t Conway__Get_frame(uint16_t * view_red, uint16_t * view_green, uint16_t * view_blue) {    
+uint16_t Conway__Get_frame(view_frame_t *frame) {    
     // Copy new conway grid to views Red=Alive, Blue=Just died, Green=Just born
     for(uint8_t row=0; row<CONWAY_GRID_SIZE; row++) {
         for(uint8_t col=0; col<CONWAY_GRID_SIZE; col++) {
             if(Conway_grid[row][col] == 1) {    // Just died
-                view_blue[row] |= (1 << col);
+                frame->blue[row] |= (1 << col);
             } else if(Conway_grid[row][col] == 2) { // Continues alive
-                view_red[row] |= (1 << col);
+                frame->red[row] |= (1 << col);
             } else if(Conway_grid[row][col] == 3) { // Just born
-                view_green[row] |= (1 << col);
+                frame->green[row] |= (1 << col);
             }
         }
     }
@@ -47,10 +47,10 @@ uint16_t Conway__Get_frame(uint16_t * view_red, uint16_t * view_green, uint16_t 
     // If the red cells are staying the same over 3 frames, re initialize grid
     uint8_t updated_buffer = 0;
     for(uint8_t row=0; row<CONWAY_GRID_SIZE; row++) {
-        if(view_red[row] != Prev_frame[row]) {
+        if(frame->red[row] != Prev_frame[row]) {
             updated_buffer = 1;
         }
-        Prev_frame[row] = view_red[row];
+        Prev_frame[row] = frame->red[row];
     }
 
     if(updated_buffer == 0) {

@@ -45,28 +45,23 @@ void Menu__Initialize(void) {
     Menu_current_view = VIEW_WEATHER;
 }
 
-void Menu__Get_view(uint16_t * view_red, uint16_t * view_green, uint16_t * view_blue) {    
+void Menu__Get_view(view_frame_t *frame) {    
+    if (!frame) return;
     switch(Menu_current_view) {
     case VIEW_WEATHER:
-        for(uint8_t row=0; row<16; row++) {
-            view_red[row] = image_weather_red[row];
-            view_blue[row] = image_weather_blue[row];
-            view_green[row] = image_weather_green[row];
-        }
+        memcpy(frame->red, image_weather_red, sizeof(frame->red));
+        memcpy(frame->green, image_weather_green, sizeof(frame->green));
+        memcpy(frame->blue, image_weather_blue, sizeof(frame->blue));
         break;
     case VIEW_CONWAY:
-        for(uint8_t row=0; row<16; row++) {
-            view_red[row] = image_conway_red[row];
-            view_blue[row] = image_conway_blue[row];
-            view_green[row] = image_conway_green[row];
-        }
+        memcpy(frame->red, image_conway_red, sizeof(frame->red));
+        memcpy(frame->green, image_conway_green, sizeof(frame->green));
+        memcpy(frame->blue, image_conway_blue, sizeof(frame->blue));
         break;
     case VIEW_ETCHSKETCH:
-        for(uint8_t row=0; row<16; row++) {
-            view_red[row] = image_etchsketch_red[row];
-            view_blue[row] = image_etchsketch_blue[row];
-            view_green[row] = image_etchsketch_green[row];
-        }
+        memcpy(frame->red, image_etchsketch_red, sizeof(frame->red));
+        memcpy(frame->green, image_etchsketch_green, sizeof(frame->green));
+        memcpy(frame->blue, image_etchsketch_blue, sizeof(frame->blue));
         break;
     default:
         break;

@@ -46,9 +46,7 @@ typedef enum {
 SemaphoreHandle_t displayUpdateSemaphore = NULL;
 
 // Private static variables
-static uint16_t View_red[16];
-static uint16_t View_green[16];
-static uint16_t View_blue[16];
+static view_frame_t View_frame;
 
 static View_type View_current_view;
 static volatile uint32_t View_refresh_rate_ms;
@@ -112,6 +110,10 @@ void View__Process_UI(uint16_t UI_event) {
         if (View_current_view == VIEW_MENU) {
             View_current_view = Menu__Get_current_view();
             build_new_view();
+            // On entering etchsketch view, request sync
+            if (View_current_view == VIEW_ETCHSKETCH) {
+                Etchsketch__On_Enter();
+            }
         } else {
             View_current_view = VIEW_MENU;
             build_new_view();
@@ -270,26 +272,24 @@ void View__Set_display_state(uint8_t request_state) {
 
 void build_new_view(void) {
     // Clear view
-    memset(View_red, 0, sizeof(View_red));
-    memset(View_green, 0, sizeof(View_green));
-    memset(View_blue, 0, sizeof(View_blue));
+    memset(&View_frame, 0, sizeof(View_frame));
 
     // Assemble sprite array according to requested view and values
     switch (View_current_view) {
     case VIEW_MENU:
         View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
-        Menu__Get_view(View_red, View_green, View_blue);
+        Menu__Get_view(&View_frame);
         break;
     case VIEW_WEATHER:
         View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
-        Weather__Get_view(View_red, View_green, View_blue);
+        Weather__Get_view(&View_frame);
         break;
     case VIEW_CONWAY:
-        View_refresh_rate_ms = Conway__Get_frame(View_red, View_green, View_blue);
+        View_refresh_rate_ms = Conway__Get_frame(&View_frame);
         break;
     case VIEW_ETCHSKETCH:
         View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
-        Etchsketch__Get_view(View_red, View_green, View_blue);
+        Etchsketch__Get_view(&View_frame);
         break;
     default:
         break;
@@ -330,6 +330,6 @@ void blocking_thread_update_display(void *pvParameters) {
         
         // Update display (whether triggered by UI event or timeout)
         build_new_view();
-        Led_driver__Update_RAM(View_red, View_green, View_blue);
+        Led_driver__Update_RAM(&View_frame);
     }
 }

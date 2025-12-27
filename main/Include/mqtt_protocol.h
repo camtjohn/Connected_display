@@ -19,6 +19,9 @@
 #define MSG_TYPE_FORECAST_WEATHER   0x02
 #define MSG_TYPE_DEVICE_CONFIG      0x03
 #define MSG_TYPE_VERSION            0x10
+#define MSG_TYPE_SHARED_VIEW_REQ    0x20
+#define MSG_TYPE_SHARED_VIEW_FRAME  0x21
+#define MSG_TYPE_SHARED_VIEW_UPDATES 0x22
 
 // Protocol Constants
 #define MQTT_PROTOCOL_HEADER_SIZE   2
@@ -81,8 +84,21 @@ typedef struct {
  * Total message size: 3 bytes (header + payload)
  */
 typedef struct {
-    uint8_t version;        // Firmware version number
+    uint16_t version;        // Firmware version number
 } mqtt_version_t;
+
+typedef struct {
+    uint16_t seq;         // Sequence number for gap detection
+    uint16_t red[16];
+    uint16_t green[16];
+    uint16_t blue[16];
+} mqtt_shared_view_frame_t;
+
+typedef struct {
+    uint8_t row;
+    uint8_t col;
+    uint8_t color;   // 0=red,1=green,2=blue
+} mqtt_shared_pixel_update_t;
 
 /**
  * @brief Parse MQTT binary message header
@@ -147,5 +163,15 @@ int8_t mqtt_protocol_get_actual_temp(uint8_t temp_with_offset);
  */
 int mqtt_protocol_build_device_config(const char **strings, uint8_t num_strings,
                                       uint8_t *buffer, uint8_t buffer_size);
+
+int mqtt_protocol_build_shared_view_request(uint8_t *buffer, uint8_t buffer_size);
+int mqtt_protocol_parse_shared_view_frame(const uint8_t *payload, uint8_t payload_len,
+                                          mqtt_shared_view_frame_t *frame);
+int mqtt_protocol_build_shared_view_updates(const mqtt_shared_pixel_update_t *updates, uint8_t num_updates,
+                                            uint16_t seq,
+                                            uint8_t *buffer, uint8_t buffer_size);
+int mqtt_protocol_parse_shared_view_updates(const uint8_t *payload, uint8_t payload_len,
+                                            mqtt_shared_pixel_update_t *updates, uint8_t max_updates, 
+                                            uint8_t *out_count, uint16_t *out_seq);
 
 #endif // MQTT_PROTOCOL_H

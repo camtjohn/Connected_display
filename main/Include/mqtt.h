@@ -18,6 +18,7 @@ extern uint16_t view_main[16];
     #define MQTT_TOPIC_HEARTBEAT            "debug_dev_heartbeat"
     #define MQTT_TOPIC_OFFLINE              "debug_device_offline"
     #define MQTT_TOPIC_TEST                 "debug_test_msg"
+    #define MQTT_TOPIC_SHARED_VIEW          "debug_shared_view" // Added shared view topic for debug
 #else
     // Production topics (zipcode appended at runtime)
     #define MQTT_TOPIC_WEATHER_BASE         "weather"
@@ -25,6 +26,7 @@ extern uint16_t view_main[16];
     #define MQTT_TOPIC_BOOTUP               "dev_bootup"
     #define MQTT_TOPIC_HEARTBEAT            "dev_heartbeat"
     #define MQTT_TOPIC_OFFLINE              "device_offline"
+    #define MQTT_TOPIC_SHARED_VIEW          "shared_view" // Added shared view topic for production
 #endif
 
 // This client publishes to these topics (notify/update server)
