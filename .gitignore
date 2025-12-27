@@ -3,3 +3,7 @@ sdkconfig.old
 .vscode/
 main/.cproject
 build/
+ 
+ # Do not commit TLS certificates/keys
+ main/TLS_Keys/*
+ 
