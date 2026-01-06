@@ -1,142 +1,53 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/semphr.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_ota_ops.h"
-#include "esp_https_ota.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 
 #include "ota.h"
-#include "device_config.h"
 
 static const char *TAG = "ota";
 
-#define OTA_URL "https://jbar.dev/firmware.bin"
+// NVS keys for factory boot control
+#define NVS_NAMESPACE "boot_ctrl"
+#define KEY_BOOT_TO_FACTORY "boot_factory"
 
-extern const uint8_t _binary_ca_crt_start[];
-extern const uint8_t _binary_ca_crt_end[];
-
-// Semaphore for triggering OTA from external modules
-SemaphoreHandle_t startOTASemaphore = NULL;               
-
-// Thread variables
-TaskHandle_t blockingTaskHandle_OTA = NULL;
-
-// Private method prototypes
-static void download_image(void);
-static char* get_pem_from_cert(void);
-static void blocking_thread_start_OTA(void *pvParameters);
-
-// Private method definitions
-
-char* get_pem_from_cert(void) {
-    char* ret_val = NULL;
-    const uint8_t *crt_start = _binary_ca_crt_start;
-    const uint8_t *crt_end = _binary_ca_crt_end;
-    size_t cert_len = 0;
-    char *cert_pem = NULL;
-
-    if (crt_end > crt_start) {
-        cert_len = (size_t)(crt_end - crt_start);
-    }
-
-    if (cert_len > 0 && cert_len < 65536) {
-        cert_pem = malloc(cert_len + 1);
-        if (cert_pem) {
-            memcpy(cert_pem, crt_start, cert_len);
-            cert_pem[cert_len] = '\0';
-            ret_val = cert_pem;
-        } else {
-            ESP_LOGW(TAG, "Failed to allocate memory for cert, continuing without cert verification");
-        }
-    } else if (cert_len != 0) {
-        ESP_LOGW(TAG, "Unexpected cert size %u, skipping cert", (unsigned)cert_len);
-    } else {
-        ESP_LOGW(TAG, "No embedded CA certificate found, skipping cert verification");
-    }
-
-    return(ret_val);
-}
-
- void download_image(void) {
-    ESP_LOGI(TAG, "Starting OTA download");
-
-    char* cert_pem = get_pem_from_cert();
-    if (cert_pem) {
-        ESP_LOGI(TAG, "Using embedded CA certificate for TLS verification");
-    } else {
-        ESP_LOGW(TAG, "No CA certificate available - cert verification disabled");
-    }
-
-    esp_http_client_config_t my_http_config = {
-        .url = OTA_URL,
-        .cert_pem = cert_pem,
-        .keep_alive_enable = false,                         // disable keep-alive to free connection resources
-        .buffer_size = 4096,                                // 4KB buffer for better transfer reliability
-        .skip_cert_common_name_check = true,                // for jbar.dev with self-signed cert
-        .timeout_ms = 30000,                                // 30 second timeout for large firmware transfers
-    };
-
-    esp_https_ota_config_t ota_config = {
-        .http_config = &my_http_config,
-        .bulk_flash_erase = false,  // Erase as we go instead of all at once (saves RAM)
-    };
-
-    esp_err_t ret = esp_https_ota(&ota_config);
-
-    if (cert_pem) {
-        free(cert_pem);
-    }
-
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "OTA successful, restarting...");
+// Request boot to factory app for OTA update
+void OTA__Request_Factory_Boot(void) {
+    ESP_LOGI(TAG, "Setting flag to boot to factory app for OTA update");
+    
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err == ESP_OK) {
+        uint8_t boot_flag = 1;
+        nvs_set_u8(nvs_handle, KEY_BOOT_TO_FACTORY, boot_flag);
+        nvs_commit(nvs_handle);
+        nvs_close(nvs_handle);
+        
+        ESP_LOGI(TAG, "Rebooting to factory app...");
+        vTaskDelay(pdMS_TO_TICKS(1000));
         esp_restart();
     } else {
-        ESP_LOGE(TAG, "OTA failed with error code 0x%x", ret);
+        ESP_LOGE(TAG, "Failed to open NVS for factory boot flag: %s", esp_err_to_name(err));
     }
-}
-
-void blocking_thread_start_OTA(void *pvParameters) {
-    while(1) {
-        // Wait for semaphore from button press
-        if(xSemaphoreTake(startOTASemaphore, portMAX_DELAY) == pdTRUE) {
-            // Start OTA process: get image from jbar.dev
-            download_image();
-        }
-    }
-}
-
-void OTA__Trigger(void) {
-    xSemaphoreGive(startOTASemaphore);
 }
 
 void OTA__Init(void) {
-    ESP_LOGI(TAG, "OTA Init start");
+    ESP_LOGI(TAG, "OTA Init - checking boot state");
     
     // Check if we just booted from an OTA update
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_ota_img_states_t ota_state;
     if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
         if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
-            // First boot after OTA - mark as valid
-            ESP_LOGI(TAG, "First boot after OTA update detected - marking as valid");
+            // First boot after OTA - mark as valid to prevent rollback
+            ESP_LOGI(TAG, "First boot after OTA update - marking app as valid");
             esp_ota_mark_app_valid_cancel_rollback();
         }
     }
-
-    startOTASemaphore = xSemaphoreCreateBinary();
-    if (startOTASemaphore == NULL) {
-        ESP_LOGE(TAG, "Failed to create OTA semaphore");
-        return;
-    }
-
-    xTaskCreate(
-        blocking_thread_start_OTA,       // Task function
-        "BlockingTask_StartOTA",       // Task name (for debugging)
-        8192,   // Stack size (words)
-        NULL,                           // Task parameter
-        8,                             // Task priority
-        &blockingTaskHandle_OTA       // Task handle
-    );
+    
+    ESP_LOGI(TAG, "Running from partition: %s", running->label);
 }
