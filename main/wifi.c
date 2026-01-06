@@ -14,6 +14,7 @@
 #include "lwip/sys.h"
 
 #include "wifi.h"
+#include "device_config.h"
 
 /* The examples use WiFi configuration that you can set via project configuration menu
 
@@ -56,6 +57,11 @@ static EventGroupHandle_t s_wifi_event_group;
 static const char *TAG = "wifi station";
 
 static int s_retry_num = 0;
+static bool s_initial_connection_done = false;
+static int s_reconnect_delay_seconds = 5;  // Start with 5 second delay
+
+#define MIN_RECONNECT_DELAY 5      // Minimum 5 seconds
+#define MAX_RECONNECT_DELAY 300    // Maximum 5 minutes between attempts
 
 
 static void event_handler(void* arg, esp_event_base_t event_base,
@@ -64,23 +70,39 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_retry_num < INIT_WIFI_MAXIMUM_RETRY) {
+        // If we've connected before, keep retrying indefinitely with exponential backoff
+        if (s_initial_connection_done) {
+            ESP_LOGW(TAG, "Disconnected from AP, reconnecting in %d seconds...", s_reconnect_delay_seconds);
+            vTaskDelay(pdMS_TO_TICKS(s_reconnect_delay_seconds * 1000));
             esp_wifi_connect();
-            s_retry_num++;
-            ESP_LOGI(TAG, "retry to connect to the AP");
+            
+            // Exponential backoff: double the delay each time, up to max
+            s_reconnect_delay_seconds *= 2;
+            if (s_reconnect_delay_seconds > MAX_RECONNECT_DELAY) {
+                s_reconnect_delay_seconds = MAX_RECONNECT_DELAY;
+            }
         } else {
-            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+            // During initial connection, limit retries
+            if (s_retry_num < INIT_WIFI_MAXIMUM_RETRY) {
+                esp_wifi_connect();
+                s_retry_num++;
+                ESP_LOGI(TAG, "Retry to connect to the AP (%d/%d)", s_retry_num, INIT_WIFI_MAXIMUM_RETRY);
+            } else {
+                ESP_LOGE(TAG, "Failed to connect after %d attempts", INIT_WIFI_MAXIMUM_RETRY);
+                xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+            }
         }
-        ESP_LOGI(TAG,"connect to the AP fail");
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
+        s_reconnect_delay_seconds = MIN_RECONNECT_DELAY;  // Reset backoff on successful connection
+        s_initial_connection_done = true;  // Mark that we've connected successfully at least once
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
 
-void wifi_init_sta(void)
+int wifi_init_sta(void)
 {
     s_wifi_event_group = xEventGroupCreate();
 
@@ -106,20 +128,17 @@ void wifi_init_sta(void)
                                                         NULL,
                                                         &instance_got_ip));
 
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = WIFI_SSID,
-            .password = WIFI_PASS,
-            /* Authmode threshold resets to WPA2 as default if password matches WPA2 standards (pasword len => 8).
-             * If you want to connect the device to deprecated WEP/WPA networks, Please set the threshold value
-             * to WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK and set the password with length and format matching to
-	     * WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK standards.
-             */
-            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
-            // .threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD,
-            // .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
-        },
-    };
+    // Get WiFi credentials from NVS
+    DeviceConfig *config = Device_Config__Get();
+    if (config == NULL || strlen(config->wifi_ssid) == 0) {
+        ESP_LOGE(TAG, "No WiFi credentials configured in NVS!");
+        return;
+    }
+
+    wifi_config_t wifi_config = {0};
+    strncpy((char *)wifi_config.sta.ssid, config->wifi_ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char *)wifi_config.sta.password, config->wifi_password, sizeof(wifi_config.sta.password));
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
     ESP_ERROR_CHECK(esp_wifi_start() );
@@ -128,23 +147,23 @@ void wifi_init_sta(void)
 
     /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
      * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
-    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-            pdFALSE,
-            pdFALSE,
-            portMAX_DELAY);
+            EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+                WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+                pdFALSE,
+                pdFALSE,
+                portMAX_DELAY);
 
     /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
      * happened. */
     if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
-                 WIFI_SSID, WIFI_PASS);
+        ESP_LOGI(TAG, "Connected to WiFi successfully");
+        return 0;  // Success
     } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
-                 WIFI_SSID, WIFI_PASS);
-    } else {
-        ESP_LOGE(TAG, "UNEXPECTED EVENT");
+        ESP_LOGE(TAG, "Failed to connect to WiFi");
+        return -1;  // Failure
     }
+    
+    return -1;  // Unexpected state
 }
 
 void Wifi__Start(void)
@@ -157,6 +176,6 @@ void Wifi__Start(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    ESP_LOGI(TAG, "Wifi starting...");
-    wifi_init_sta();
+    ESP_LOGI(TAG, "WiFi starting...");
+    return wifi_init_sta();
 }

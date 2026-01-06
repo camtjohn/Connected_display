@@ -5,8 +5,6 @@
 
 #include "local_time.h"
 
-
-
 static const char *TAG = "LOCAL_TIME";
 
 // Private variables
@@ -26,8 +24,9 @@ void Local_Time__Init_SNTP(void) {
     esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     esp_netif_sntp_init(&config);
 
-    if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK) {
-        ESP_LOGI(TAG, "Did not get time within 10 sec timeout. I think we're trying again...");
+    // Non-blocking/short wait: check once quickly, then continue; sync will retry in background
+    if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(500)) != ESP_OK) {
+        ESP_LOGI(TAG, "Time not synced yet (500 ms check); continuing, will sync in background");
     }
 
     setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);  // Set timezone to EST
