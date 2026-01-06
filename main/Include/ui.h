@@ -22,6 +22,10 @@
 #define ENC_2_A     3
 #define ENC_2_B     4
 
+// M5Stamp S3 built-in button (GPIO 0)
+#define BTN_BUILTIN 0
+#define BTN_LONGPRESS_MS 2000  // 2 second long press
+
 void Ui__Initialize(void);
 
 // Check if a specific button is currently pressed (for paint mode, etc.)

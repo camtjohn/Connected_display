@@ -1,5 +1,6 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
+#include "driver/pulse_cnt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -15,31 +16,32 @@ uint8_t Btn_array[4] = {BTN_1, BTN_2, BTN_3, BTN_4};
 uint8_t Btn_state;  // 4th bit=BTN_4, LSB=BTN_1
 
 uint8_t Enc_array[4] = {ENC_1_A, ENC_1_B, ENC_2_A, ENC_2_B};
-// Previous encoder pins smushed into one byte:
-// xxxx 2_B 2_A 1_B 1_A
-static volatile uint8_t Prev_encoder_states;
 
 // Button interrupt handling
 TaskHandle_t periodicTaskHandle_btn = NULL;
 void button_event_task(void *);
 
-// encoder interrupt handling
-TaskHandle_t periodicTaskHandle_enc = NULL; // now used for encoder event consumer
-void encoder_event_task(void *);
-
-// ISR queues for button and encoder pin changes
+// ISR queue for button pin changes
 static QueueHandle_t button_isr_queue = NULL;
-static QueueHandle_t encoder_isr_queue = NULL;
 
-// ISR handlers
-static void IRAM_ATTR button_isr_handler(void *arg);
-static void IRAM_ATTR encoder_isr_handler(void *arg);
-
-// last observed pin level (indexed by Enc_array index). Updated in ISR to avoid repeated queuing
-static volatile uint8_t encoder_last_level[4] = {0,0,0,0};
+// Button ISR handler
+static void button_isr_handler(void *arg);
 
 // last observed button pin levels (indexed by button index)
 static volatile uint8_t button_last_level[4] = {0,0,0,0};
+
+// Built-in button (GPIO 0) long-press detection using interrupts
+static volatile uint32_t builtin_btn_press_time_ms = 0;
+static volatile uint8_t builtin_btn_longpress_detected = 0;
+static esp_timer_handle_t builtin_btn_timer_handle = NULL;
+
+static void builtin_button_isr_handler(void *arg);
+static void builtin_button_timer_callback(void *arg);
+
+// PCNT encoder units
+static pcnt_unit_handle_t pcnt_unit_enc1 = NULL;
+static pcnt_unit_handle_t pcnt_unit_enc2 = NULL;
+static void encoder_poll_task(void *arg);
 
 // Button pressed state (shared between button and encoder tasks for paint mode)
 static volatile uint8_t button_pressed_state[4] = {0,0,0,0};
@@ -59,18 +61,92 @@ void Ui__Initialize(void) {
         setup_gpio_input(btn_num);
     }
 
-    Prev_encoder_states = 0;    // xxxx 2_B 2_A 1_B 1_A     ex: 0000 1011 = 2_B=hi, 2_A=low, ...
+    // Configure encoder GPIO pins as inputs with pullups
     for(uint8_t enc=0; enc < 4; enc++) {
         uint8_t enc_pin_num = Enc_array[enc];
         setup_gpio_input(enc_pin_num);
-        Prev_encoder_states |= (gpio_get_level(enc_pin_num) << enc);
-        // initialize last-level cache used by ISR-level filtering
-        encoder_last_level[enc] = (uint8_t)gpio_get_level(enc_pin_num);
     }
-
-    // Create queues for button and encoder ISR events
+    
+    // Create queue for button ISR events
     button_isr_queue = xQueueCreate(16, sizeof(uint32_t));
-    encoder_isr_queue = xQueueCreate(16, sizeof(uint32_t));
+
+    // === Minimal PCNT Setup for Encoder 1 (GPIO 2=A, GPIO 1=B) ===
+    pcnt_unit_config_t unit_config = {
+        .high_limit = 100,
+        .low_limit = -100,
+    };
+    ESP_ERROR_CHECK(pcnt_new_unit(&unit_config, &pcnt_unit_enc1));
+    
+    pcnt_glitch_filter_config_t filter_config = {
+        .max_glitch_ns = 1000,  // 1us filter
+    };
+    ESP_ERROR_CHECK(pcnt_unit_set_glitch_filter(pcnt_unit_enc1, &filter_config));
+    
+    // Channel A
+    pcnt_chan_config_t chan_a_config = {
+        .edge_gpio_num = ENC_1_A,
+        .level_gpio_num = ENC_1_B,
+    };
+    pcnt_channel_handle_t pcnt_chan_a = NULL;
+    ESP_ERROR_CHECK(pcnt_new_channel(pcnt_unit_enc1, &chan_a_config, &pcnt_chan_a));
+    ESP_ERROR_CHECK(pcnt_channel_set_edge_action(pcnt_chan_a,
+                                                   PCNT_CHANNEL_EDGE_ACTION_DECREASE,
+                                                   PCNT_CHANNEL_EDGE_ACTION_INCREASE));
+    ESP_ERROR_CHECK(pcnt_channel_set_level_action(pcnt_chan_a,
+                                                    PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+                                                    PCNT_CHANNEL_LEVEL_ACTION_INVERSE));
+    
+    // Channel B
+    pcnt_chan_config_t chan_b_config = {
+        .edge_gpio_num = ENC_1_B,
+        .level_gpio_num = ENC_1_A,
+    };
+    pcnt_channel_handle_t pcnt_chan_b = NULL;
+    ESP_ERROR_CHECK(pcnt_new_channel(pcnt_unit_enc1, &chan_b_config, &pcnt_chan_b));
+    ESP_ERROR_CHECK(pcnt_channel_set_edge_action(pcnt_chan_b,
+                                                   PCNT_CHANNEL_EDGE_ACTION_INCREASE,
+                                                   PCNT_CHANNEL_EDGE_ACTION_DECREASE));
+    ESP_ERROR_CHECK(pcnt_channel_set_level_action(pcnt_chan_b,
+                                                    PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+                                                    PCNT_CHANNEL_LEVEL_ACTION_INVERSE));
+    
+    ESP_ERROR_CHECK(pcnt_unit_enable(pcnt_unit_enc1));
+    ESP_ERROR_CHECK(pcnt_unit_clear_count(pcnt_unit_enc1));
+    ESP_ERROR_CHECK(pcnt_unit_start(pcnt_unit_enc1));
+    
+    // === Encoder 2 (GPIO 3=A, GPIO 4=B) ===
+    ESP_ERROR_CHECK(pcnt_new_unit(&unit_config, &pcnt_unit_enc2));
+    ESP_ERROR_CHECK(pcnt_unit_set_glitch_filter(pcnt_unit_enc2, &filter_config));
+    
+    pcnt_chan_config_t chan2_a_config = {
+        .edge_gpio_num = ENC_2_A,
+        .level_gpio_num = ENC_2_B,
+    };
+    pcnt_channel_handle_t pcnt_chan2_a = NULL;
+    ESP_ERROR_CHECK(pcnt_new_channel(pcnt_unit_enc2, &chan2_a_config, &pcnt_chan2_a));
+    ESP_ERROR_CHECK(pcnt_channel_set_edge_action(pcnt_chan2_a,
+                                                   PCNT_CHANNEL_EDGE_ACTION_DECREASE,
+                                                   PCNT_CHANNEL_EDGE_ACTION_INCREASE));
+    ESP_ERROR_CHECK(pcnt_channel_set_level_action(pcnt_chan2_a,
+                                                    PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+                                                    PCNT_CHANNEL_LEVEL_ACTION_INVERSE));
+    
+    pcnt_chan_config_t chan2_b_config = {
+        .edge_gpio_num = ENC_2_B,
+        .level_gpio_num = ENC_2_A,
+    };
+    pcnt_channel_handle_t pcnt_chan2_b = NULL;
+    ESP_ERROR_CHECK(pcnt_new_channel(pcnt_unit_enc2, &chan2_b_config, &pcnt_chan2_b));
+    ESP_ERROR_CHECK(pcnt_channel_set_edge_action(pcnt_chan2_b,
+                                                   PCNT_CHANNEL_EDGE_ACTION_INCREASE,
+                                                   PCNT_CHANNEL_EDGE_ACTION_DECREASE));
+    ESP_ERROR_CHECK(pcnt_channel_set_level_action(pcnt_chan2_b,
+                                                    PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+                                                    PCNT_CHANNEL_LEVEL_ACTION_INVERSE));
+    
+    ESP_ERROR_CHECK(pcnt_unit_enable(pcnt_unit_enc2));
+    ESP_ERROR_CHECK(pcnt_unit_clear_count(pcnt_unit_enc2));
+    ESP_ERROR_CHECK(pcnt_unit_start(pcnt_unit_enc2));
 
     // Install GPIO ISR service (once for all GPIO interrupts)
     gpio_install_isr_service(0);
@@ -83,14 +159,7 @@ void Ui__Initialize(void) {
         gpio_isr_handler_add(pin, button_isr_handler, (void*)(uintptr_t)pin);
     }
     
-    // Attach encoder interrupt handlers
-    for (uint8_t i = 0; i < 4; i++) {
-        uint8_t pin = Enc_array[i];
-        gpio_set_intr_type(pin, GPIO_INTR_ANYEDGE);
-        gpio_isr_handler_add(pin, encoder_isr_handler, (void*)(uintptr_t)pin);
-    }
-
-    // start consumer tasks that process ISR events and debounce
+    // start consumer tasks
     xTaskCreate(
         button_event_task,              // Task function
         "ButtonEventTask",             // Task name (for debugging)
@@ -99,15 +168,67 @@ void Ui__Initialize(void) {
         10,                             // Task priority
         &periodicTaskHandle_btn         // Task handle
     );
+    
     xTaskCreate(
-        encoder_event_task,             // Task function
-        "EncoderEventTask",            // Task name (for debugging)
+        encoder_poll_task,              // Task function
+        "EncoderPollTask",             // Task name (for debugging)
         (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
-        (void*)encoder_isr_queue,       // Task parameter -> queue handle
+        NULL,                           // Task parameter
         10,                             // Task priority
-        &periodicTaskHandle_enc         // Task handle
+        NULL                            // Task handle
     );
+    
+    // Setup built-in button (GPIO 0) for long-press detection via interrupt
+    gpio_config_t builtin_btn_config = {
+        .pin_bit_mask = (1ULL << BTN_BUILTIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_ANYEDGE,  // Trigger on both press and release
+    };
+    ESP_ERROR_CHECK(gpio_config(&builtin_btn_config));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(BTN_BUILTIN, builtin_button_isr_handler, NULL));
+    
+    // Create high-resolution timer for long-press detection
+    const esp_timer_create_args_t timer_args = {
+        .callback = builtin_button_timer_callback,
+        .name = "builtin_btn_timer"
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &builtin_btn_timer_handle));
+}
+}
 
+// Poll PCNT counters and post events when movement detected
+static void encoder_poll_task(void *arg) {
+    int prev_count1 = 0, prev_count2 = 0;
+    
+    while (1) {
+        int count1 = 0, count2 = 0;
+        pcnt_unit_get_count(pcnt_unit_enc1, &count1);
+        pcnt_unit_get_count(pcnt_unit_enc2, &count2);
+        
+        // Encoder 1: trigger on every 4 counts (one detent)
+        int delta1 = count1 - prev_count1;
+        if (delta1 >= 4) {
+            EventSystem_PostEvent(EVENT_UI_ENCODER, 0x10, NULL);  // CCW
+            prev_count1 = count1;
+        } else if (delta1 <= -4) {
+            EventSystem_PostEvent(EVENT_UI_ENCODER, 0x20, NULL);  // CW
+            prev_count1 = count1;
+        }
+        
+        // Encoder 2
+        int delta2 = count2 - prev_count2;
+        if (delta2 >= 4) {
+            EventSystem_PostEvent(EVENT_UI_ENCODER, 0x40, NULL);  // CCW
+            prev_count2 = count2;
+        } else if (delta2 <= -4) {
+            EventSystem_PostEvent(EVENT_UI_ENCODER, 0x80, NULL);  // CW
+            prev_count2 = count2;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(10));  // Poll every 10ms
+    }
 }
 
 // Private methods
@@ -197,112 +318,6 @@ void button_event_task(void *pvParameters) {
     }
 }
 
-// ISR: push pin number to queue
-static void IRAM_ATTR encoder_isr_handler(void *arg) {
-    uint32_t pin = (uint32_t)(uintptr_t)arg;
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    if (!encoder_isr_queue) return;
-
-    // find index for this pin (0-3)
-    int idx = -1;
-    for (int i = 0; i < 4; ++i) {
-        if (Enc_array[i] == (uint8_t)pin) { idx = i; break; }
-    }
-    if (idx < 0) return;
-
-    // read level; only enqueue if different from last seen level for this pin
-    uint8_t level = (uint8_t)gpio_get_level((gpio_num_t)pin);
-    if (level == encoder_last_level[idx]) {
-        return; // duplicate edge or noise already processed
-    }
-
-    // update last level (done in ISR context)
-    encoder_last_level[idx] = level;
-
-    xQueueSendFromISR(encoder_isr_queue, &pin, &xHigherPriorityTaskWoken);
-    if (xHigherPriorityTaskWoken) portYIELD_FROM_ISR();
-}
-
-// Consumer task: debounce and translate pin changes into encoder rotation events
-void encoder_event_task(void *pvParameters) {
-    QueueHandle_t q = (QueueHandle_t)pvParameters;
-    const TickType_t debounce_ticks = pdMS_TO_TICKS(8);    // small sample debounce
-    const TickType_t refractory_ticks = pdMS_TO_TICKS(30); // suppress further events for this encoder
-    TickType_t next_allowed[2] = {0,0};
-
-    while (1) {
-        uint32_t pin;
-        if (xQueueReceive(q, &pin, portMAX_DELAY) == pdTRUE) {
-            // find which encoder and which bit
-            int idx = -1;
-            for (int i = 0; i < 4; i++) {
-                if (Enc_array[i] == (uint8_t)pin) { idx = i; break; }
-            }
-            if (idx < 0) continue;
-
-            int encoder = idx / 2; // 0 or 1
-            TickType_t now = xTaskGetTickCount();
-            if (now < next_allowed[encoder]) {
-                continue; // still in refractory window
-            }
-
-            // small debounce: sample, wait, resample
-            uint8_t a1 = gpio_get_level(Enc_array[encoder*2]);
-            uint8_t b1 = gpio_get_level(Enc_array[encoder*2 + 1]);
-            vTaskDelay(debounce_ticks);
-            uint8_t a2 = gpio_get_level(Enc_array[encoder*2]);
-            uint8_t b2 = gpio_get_level(Enc_array[encoder*2 + 1]);
-            if (a1 != a2 || b1 != b2) {
-                // unstable, skip this transient
-                // set a small backoff to avoid tight requeueing
-                next_allowed[encoder] = xTaskGetTickCount() + pdMS_TO_TICKS(5);
-                continue;
-            }
-
-            uint8_t encbits = (a2 ? 1 : 0) | ((b2 ? 1 : 0) << 1);
-            uint8_t prev = (Prev_encoder_states >> (encoder*2)) & 3;
-
-            uint8_t enc_events = 0;
-            if (encbits != prev) {
-                if (encbits == 3) { // detent
-                    if (prev == 1) {
-                        enc_events = (encoder == 0) ? 0x10 : 0x40; // CW
-                    } else if (prev == 2) {
-                        enc_events = (encoder == 0) ? 0x20 : 0x80; // CCW
-                    }
-                }
-                // update Prev_encoder_states for this encoder
-                Prev_encoder_states &= ~(3 << (encoder*2));
-                Prev_encoder_states |= (encbits << (encoder*2));
-            }
-
-            if (enc_events) {
-                // ESP_LOGI(TAG, "enc events (ISR): encoder=%d bits=0x%02x prev=0x%02x events=0x%02x",
-                //          encoder, encbits, prev, enc_events);
-                
-                // Check if any button is currently held (for paint mode in etchsketch)
-                // The view module can check button_pressed_state[] to enable paint trail
-                uint8_t any_button_held = 0;
-                for (int i = 0; i < 4; i++) {
-                    if (button_pressed_state[i]) {
-                        any_button_held = 1;
-                        // ESP_LOGI(TAG, "Encoder rotated while Button %d held (paint mode)", i + 1);
-                        break;
-                    }
-                }
-                
-                // post event; if the event system queue is full we will drop the event to avoid blocking ISR
-                EventSystem_PostEvent(EVENT_UI_ENCODER, enc_events, NULL);
-                // suppress further events for a short refractory period to avoid floods
-                next_allowed[encoder] = xTaskGetTickCount() + refractory_ticks;
-            } else {
-                // no event, allow next sample shortly
-                next_allowed[encoder] = xTaskGetTickCount() + pdMS_TO_TICKS(3);
-            }
-        }
-    }
-}
-
 void setup_gpio_input(uint8_t pin) {
     gpio_reset_pin(pin);
     gpio_set_direction(pin, GPIO_MODE_INPUT);
@@ -315,3 +330,25 @@ uint8_t Ui__Is_Button_Pressed(uint8_t button_num) {
     if (button_num < 1 || button_num > 4) return 0;
     return button_pressed_state[button_num - 1];
 }
+
+// ISR handler for built-in button (GPIO 0)
+static void builtin_button_isr_handler(void *arg) {
+    uint8_t btn_level = gpio_get_level(BTN_BUILTIN);
+    
+    if (btn_level == 0) {  // Button pressed (active LOW)
+        // Start timer to detect long press
+        esp_timer_start_once(builtin_btn_timer_handle, BTN_LONGPRESS_MS * 1000);  // Convert ms to µs
+    } else {  // Button released
+        // Stop timer
+        esp_timer_stop(builtin_btn_timer_handle);
+    }
+}
+
+// Timer callback - fires if button held for 2+ seconds
+static void builtin_button_timer_callback(void *arg) {
+    // Only trigger if button is still pressed
+    if (gpio_get_level(BTN_BUILTIN) == 0) {
+        ESP_LOGI(TAG, "Built-in button LONG PRESS - rebooting to factory app");
+        OTA__Request_Factory_Boot();  // Reboot to factory app (does not return)
+    }
+}}
