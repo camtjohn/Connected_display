@@ -1,10 +1,11 @@
 #ifndef OTA_H
 #define OTA_H
 
-// Initialize OTA system (validates boot state)
-void OTA__Init(void);
+#include "freertos/semphr.h"
 
-// Request boot to factory app for OTA update or reconfiguration
-void OTA__Request_Factory_Boot(void);
+extern SemaphoreHandle_t startOTASemaphore;
+
+void OTA__Init(void);
+void OTA__Trigger(void);
 
 #endif

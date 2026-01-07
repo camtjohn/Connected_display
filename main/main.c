@@ -32,8 +32,6 @@ const static char *TAG = "WEATHER_STATION: MAIN";
 #define ENABLE_WIFI_MQTT    1
 #define ENABLE_DEBUG_MODE   1
 
-#define WIFI_PROVISION_BUTTON BTN_1  // Button to trigger factory provisioning
-
 // VIEW
 uint16_t View_red[16];
 uint16_t View_green[16];
@@ -45,11 +43,8 @@ void periodic_task_sleep_wake(void *);
 TaskHandle_t periodicTaskHandle_server = NULL;
 void periodic_task_check_server(void *);
 
-// Private helper function
-static void handle_wifi_connection_failure(void);
-
 void app_main(void) {
-    ESP_LOGI(TAG, "Starting up");
+    ESP_LOGI(TAG, "Starter up");
 
     #if(ENABLE_DISPLAY) 
     View__Initialize();
@@ -64,28 +59,15 @@ void app_main(void) {
         ESP_LOGE(TAG, "Failed to initialize device config!");
     }
     
-    // Initialize UI early so we can check button presses
-    Ui__Initialize();
-    
     Local_Time__Init_SNTP();
-    
-    // Attempt WiFi connection (will return after connect or failure)
-    int wifi_result = Wifi__Start();
-    
-    // Check if WiFi connection failed
-    if (wifi_result != 0) {
-        ESP_LOGW(TAG, "WiFi connection failed - entering offline mode");
-        handle_wifi_connection_failure();
-        // Function returns if user chooses to continue without WiFi
-        // or reboots to factory if user wants to provision
-    }
-    
-    // WiFi connected successfully, proceed with normal startup
+    Wifi__Start();
     OTA__Init();
     Mqtt__Start();
-    #else
-    Ui__Initialize();
+    // Is this delay still necessary? Why??
+    vTaskDelay(pdMS_TO_TICKS(3000));
     #endif
+
+    Ui__Initialize();
 
     // Initialize Event System
     EventSystem_Initialize();
@@ -121,105 +103,7 @@ void app_main(void) {
     }
 }
 
-// Handle WiFi connection failure - show view and wait for user action
-static void handle_wifi_connection_failure(void) {
-    ESP_LOGI(TAG, "WiFi connection failed - displaying offline view");
-    
-    // Check if credentials exist at all
-    DeviceConfig *config = Device_Config__Get();
-    if (config == NULL || strlen(config->wifi_ssid) == 0) {
-        ESP_LOGE(TAG, "No WiFi credentials configured");
-        ESP_LOGW(TAG, "=================================");
-        ESP_LOGW(TAG, "No WiFi Credentials Found");
-        ESP_LOGW(TAG, "BTN1: Provision WiFi");
-        ESP_LOGW(TAG, "BTN4: Continue offline");
-        ESP_LOGW(TAG, "=================================");
-        
-        // Allow user to provision or continue offline
-        while (1) {
-            if (Ui__Is_Button_Pressed(1)) {  // BTN_1 - Provision
-                ESP_LOGI(TAG, "Rebooting to factory app for provisioning");
-                vTaskDelay(pdMS_TO_TICKS(500));
-                OTA__Request_Factory_Boot();
-            }
-            if (Ui__Is_Button_Pressed(4)) {  // BTN_4 - Continue offline
-                ESP_LOGI(TAG, "Continuing offline without WiFi credentials");
-                vTaskDelay(pdMS_TO_TICKS(500));
-                break;
-            }
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-        return;  // Exit without starting retry task (no credentials to retry with)
-    }
-    
-    // Credentials exist but connection failed (router offline, wrong password, etc.)
-    ESP_LOGW(TAG, "=================================");
-    ESP_LOGW(TAG, "WiFi Connection Failed");
-    ESP_LOGW(TAG, "BTN1: Enter provisioning mode");
-    ESP_LOGW(TAG, "BTN4: Continue offline");
-    ESP_LOGW(TAG, "Wait 30s to auto-continue offline");
-    ESP_LOGW(TAG, "=================================");
-    
-    // Wait up to 30 seconds for user action
-    for (int i = 0; i < 300; i++) {  // 300 x 100ms = 30 seconds
-        if (Ui__Is_Button_Pressed(1)) {  // BTN_1 - Provision
-            ESP_LOGI(TAG, "User requested WiFi provisioning - rebooting to factory app");
-            vTaskDelay(pdMS_TO_TICKS(500));
-            OTA__Request_Factory_Boot();
-            // Does not return - reboots to factory
-        }
-        if (Ui__Is_Button_Pressed(4)) {  // BTN_4 - Continue offline
-            ESP_LOGI(TAG, "User chose to continue offline");
-            vTaskDelay(pdMS_TO_TICKS(500));
-            break;
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-    
-    // Continuing without WiFi but with credentials - start background retry task
-    ESP_LOGI(TAG, "Continuing in offline mode (will retry WiFi connection in background)");
-    
-    // Create background task to retry WiFi connection periodically
-    xTaskCreate(
-        periodic_task_wifi_reconnect,
-        "PeriodicTask_WiFiReconnect",
-        (2*configMINIMAL_STACK_SIZE),
-        NULL,
-        4,  // Lower priority than main tasks
-        NULL
-    );
-}
-
 // PRIVATE METHODS
-        vTaskDelay(pdMS_TO_TICKS(10000));  // Sleep 10 seconds
-    }
-}
-
-// PRIVATE METHODS
-
-// Periodic task to retry WiFi connection in background when offline
-void periodic_task_wifi_reconnect(void *pvParameters) {
-    int reconnect_delay_seconds = 5;  // Start with 5 seconds
-    const int MAX_RECONNECT_DELAY = 300;  // Max 5 minutes
-    
-    ESP_LOGI(TAG, "WiFi reconnection task started");
-    
-    while (1) {
-        // Try to connect
-        ESP_LOGI(TAG, "Background WiFi reconnection attempt...");
-        esp_wifi_connect();
-        
-        // Wait for delay before next attempt, with exponential backoff
-        ESP_LOGI(TAG, "Next WiFi retry in %d seconds", reconnect_delay_seconds);
-        vTaskDelay(pdMS_TO_TICKS(reconnect_delay_seconds * 1000));
-        
-        // Exponential backoff: double the delay, up to max
-        reconnect_delay_seconds *= 2;
-        if (reconnect_delay_seconds > MAX_RECONNECT_DELAY) {
-            reconnect_delay_seconds = MAX_RECONNECT_DELAY;
-        }
-    }
-}
 
 // Define task: Sleep/Wakeup according to configuration
 void periodic_task_sleep_wake(void *pvParameters) {

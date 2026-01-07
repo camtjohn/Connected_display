@@ -61,8 +61,7 @@ void Spi__Write(spi_device_handle_t spi_handle, uint8_t* buffer, uint16_t num_bi
     trans_desc.length = num_bits_data;                                   // Length of (address + data) is 16 bits
     trans_desc.tx_buffer = new_buffer;
 
-    // Use queued transmit to block until the bus is free instead of erroring when a prior polling transaction is in-flight.
-    ret = spi_device_transmit(spi_handle, &trans_desc);
+    ret = spi_device_polling_transmit(spi_handle, &trans_desc);         // spi_device_polling_transmit starts to transmit entire 'trans_desc' structure.
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG_SPI, "SPI operation failed\n");
