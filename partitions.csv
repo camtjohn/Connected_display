@@ -1,13 +1,10 @@
-# Partition Table for M5Stamp S3 (8MB flash) with Factory App
+# Partition Table for M5Stamp S3 (8MB flash) with Two OTA Slots (no Factory)
 # Name,   Type, SubType, Offset,   Size,     Flags
 nvs,      data, nvs,     0x9000,   0x6000,
 phy_init, data, phy,     0xF000,   0x1000,
 otadata,  data, ota,     0x10000,  0x2000,
-# Factory app (1 MB) - permanent fallback, never overwritten by OTA
-factory,  app,  factory, 0x110000, 0x100000,
-# Two OTA app partitions (3.46 MB each for rolling updates)
-# Equal-size OTA partitions aligned to 0x10000 boundary
-# Calculate: available = FLASH_END - factory_end = 0x800000 - 0x210000 = 0x5F0000
-# blocks_available = available / 0x10000 = 95 -> blocks_per_slot = 47 -> ota_size = 47*0x10000 = 0x2F0000
-ota_0,    app,  ota_0,   0x210000, 0x2F0000,
-ota_1,    app,  ota_1,   0x500000, 0x2F0000,
+# Two OTA app partitions (3.7 MB each), equal-size and aligned to 0x10000 boundary
+# Calculate: available = FLASH_END - first_app_offset = 0x800000 - 0x110000 = 0x6F0000
+# blocks_available = available / 0x10000 = 111 -> blocks_per_slot = 55 -> ota_size = 55*0x10000 = 0x370000
+ota_0,    app,  ota_0,   0x110000, 0x370000,
+ota_1,    app,  ota_1,   0x480000, 0x370000,

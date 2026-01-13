@@ -38,6 +38,7 @@ static uint8_t Flag_Active_Server;
 static char *client_cert_buffer = NULL;  // Dynamically allocated from NVS
 static char *client_key_buffer = NULL;   // Dynamically allocated from NVS
 static char weather_topic_with_zip[24] = {0};  // Static buffer for weather topic with zipcode
+static char device_topic[32] = {0};  // Static buffer for device-specific topic
 
 // PRIVATE FUNCTION
 static void log_error_if_nonzero(const char*, int);
@@ -46,7 +47,7 @@ static void handle_mqtt_connected(esp_mqtt_client_handle_t client);
 static void incoming_mqtt_handler(esp_mqtt_event_handle_t);
 static void process_current_weather(const uint8_t *payload, uint8_t payload_len);
 static void process_forecast_weather(const uint8_t *payload, uint8_t payload_len);
-static void check_and_trigger_ota_update(uint8_t server_version);
+static void check_and_trigger_ota_update(uint16_t server_version);
 static void process_shared_view_frame(const uint8_t *payload, uint8_t payload_len);
 static void process_shared_view_updates(const uint8_t *payload, uint8_t payload_len);
 
@@ -55,9 +56,8 @@ static const char *TAG = "WEATHER_STATION: MQTT";
 static esp_mqtt_client_handle_t client;
 
 // Only CA certificate is embedded in binary
-extern const uint8_t ca_crt_start[] asm("_binary_ca_crt_start");
-extern const uint8_t ca_crt_end[]   asm("_binary_ca_crt_end");
-// Client cert and key are loaded from NVS
+// All TLS materials (CA, client cert, client key) are loaded from NVS
+static char *ca_cert_buffer = NULL;      // Dynamically allocated from NVS
 
 /*
  * @brief Handle MQTT connected event
@@ -73,8 +73,8 @@ static void handle_mqtt_connected(esp_mqtt_client_handle_t client) {
     // Build weather topic with zipcode from NVS
     char zipcode[8] = {0};
     if (Device_Config__Get_Zipcode(zipcode, sizeof(zipcode)) == 0) {
-        // Append zipcode to base topic (no separators) and store in static variable
-        snprintf(weather_topic_with_zip, sizeof(weather_topic_with_zip), "%s%s", MQTT_TOPIC_WEATHER_BASE, zipcode);
+        // Append zipcode to base topic with '/' separator and store in static variable
+        snprintf(weather_topic_with_zip, sizeof(weather_topic_with_zip), "%s/%s", MQTT_TOPIC_WEATHER_BASE, zipcode);
         ESP_LOGI(TAG, "Subscribing to weather topic: %s", weather_topic_with_zip);
         msg_id = esp_mqtt_client_subscribe(client, weather_topic_with_zip, 0);
     } else {
@@ -83,12 +83,22 @@ static void handle_mqtt_connected(esp_mqtt_client_handle_t client) {
         msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_WEATHER_BASE, 0);
     }
 
-    // Subscribe to device-specific topic
-    esp_mqtt_client_subscribe(client, MQTT_TOPIC_DEV_SPECIFIC, 0);
+    // Subscribe to device-specific topic (construct from device name)
+    char device_name[16];
+    if (Device_Config__Get_Name(device_name, sizeof(device_name)) == 0) {
+        #ifdef DEBUG_BUILD
+            snprintf(device_topic, sizeof(device_topic), "debug_%s", device_name);
+        #else
+            snprintf(device_topic, sizeof(device_topic), "%s", device_name);
+        #endif
+        ESP_LOGI(TAG, "Subscribing to device-specific topic: %s", device_topic);
+        esp_mqtt_client_subscribe(client, device_topic, 0);
+    } else {
+        ESP_LOGE(TAG, "Failed to read device name from NVS, skipping device-specific subscription");
+    }
 
     // Send device config message (binary) from NVS
     uint8_t config_msg[64];
-    char device_name[16];
     if (Device_Config__Get_Name(device_name, sizeof(device_name)) == 0 &&
         Device_Config__Get_Zipcode(zipcode, sizeof(zipcode)) == 0) {
         const char *config_strings[] = {device_name, zipcode};
@@ -229,18 +239,41 @@ void log_error_if_nonzero(const char *message, int error_code)
 
 static void mqtt_app_start(void)
 {
-    // Load client certificate and key from NVS
-    size_t cert_size = 0, key_size = 0;
+    // Load CA certificate, client certificate and key from NVS
+    size_t ca_size = 0, cert_size = 0, key_size = 0;
+    
+    // Get CA certificate size and allocate buffer
+    if (Device_Config__Get_CA_Cert(NULL, 0, &ca_size) != 0 || ca_size == 0) {
+        ESP_LOGE(TAG, "Failed to get CA certificate size from NVS");
+        return;
+    }
+    
+    ca_cert_buffer = malloc(ca_size);
+    if (ca_cert_buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for CA certificate");
+        return;
+    }
+    
+    if (Device_Config__Get_CA_Cert(ca_cert_buffer, ca_size, NULL) != 0) {
+        ESP_LOGE(TAG, "Failed to load CA certificate from NVS");
+        free(ca_cert_buffer);
+        ca_cert_buffer = NULL;
+        return;
+    }
     
     // Get certificate size and allocate buffer
     if (Device_Config__Get_Client_Cert(NULL, 0, &cert_size) != 0 || cert_size == 0) {
         ESP_LOGE(TAG, "Failed to get client certificate size from NVS");
+        free(ca_cert_buffer);
+        ca_cert_buffer = NULL;
         return;
     }
     
     client_cert_buffer = malloc(cert_size);
     if (client_cert_buffer == NULL) {
         ESP_LOGE(TAG, "Failed to allocate memory for client certificate");
+        free(ca_cert_buffer);
+        ca_cert_buffer = NULL;
         return;
     }
     
@@ -248,6 +281,8 @@ static void mqtt_app_start(void)
         ESP_LOGE(TAG, "Failed to load client certificate from NVS");
         free(client_cert_buffer);
         client_cert_buffer = NULL;
+        free(ca_cert_buffer);
+        ca_cert_buffer = NULL;
         return;
     }
     
@@ -256,6 +291,8 @@ static void mqtt_app_start(void)
         ESP_LOGE(TAG, "Failed to get client key size from NVS");
         free(client_cert_buffer);
         client_cert_buffer = NULL;
+        free(ca_cert_buffer);
+        ca_cert_buffer = NULL;
         return;
     }
     
@@ -264,6 +301,8 @@ static void mqtt_app_start(void)
         ESP_LOGE(TAG, "Failed to allocate memory for client key");
         free(client_cert_buffer);
         client_cert_buffer = NULL;
+        free(ca_cert_buffer);
+        ca_cert_buffer = NULL;
         return;
     }
     
@@ -273,15 +312,17 @@ static void mqtt_app_start(void)
         free(client_key_buffer);
         client_cert_buffer = NULL;
         client_key_buffer = NULL;
+        free(ca_cert_buffer);
+        ca_cert_buffer = NULL;
         return;
     }
     
-    ESP_LOGI(TAG, "Loaded client certificate (%d bytes) and key (%d bytes) from NVS", cert_size, key_size);
+    ESP_LOGI(TAG, "Loaded CA (%d bytes), client cert (%d bytes), key (%d bytes) from NVS", ca_size, cert_size, key_size);
     
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = MQTT_BROKER_URL,
         // .broker.address.hostname = "jbar.dev",  // needed for device in home. 192.168.0.112 does not resolve
-        .broker.verification.certificate = (const char *)ca_crt_start,
+        .broker.verification.certificate = ca_cert_buffer,
         .broker.verification.skip_cert_common_name_check = true,
         .credentials.authentication.certificate = client_cert_buffer,
         .credentials.authentication.key = client_key_buffer,
@@ -365,7 +406,7 @@ static void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
                 break;
         }
     }
-    else if(strcmp(topic_str, MQTT_TOPIC_DEV_SPECIFIC) == 0) {
+    else if(strcmp(topic_str, device_topic) == 0) {
         // Process version message
         if (header.type == MSG_TYPE_VERSION) {
             mqtt_version_t version;
@@ -380,11 +421,11 @@ static void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
 
 
 // Check if server has newer version and trigger OTA update if needed
-static void check_and_trigger_ota_update(uint8_t server_version) {
-    ESP_LOGI(TAG, "Server version: %d, Device version: %d", server_version, FW_VERSION_NUM);
-    
+static void check_and_trigger_ota_update(uint16_t server_version) {
+    ESP_LOGI(TAG, "Server version: %u, Device version: %d", server_version, FW_VERSION_NUM);
+
     if (server_version > FW_VERSION_NUM) {
-        ESP_LOGI(TAG, "New firmware available (server=%d > device=%d), triggering OTA update", 
+        ESP_LOGI(TAG, "New firmware available (server=%u > device=%d), triggering OTA update", 
                  server_version, FW_VERSION_NUM);
         // Trigger OTA
         xSemaphoreGive(startOTASemaphore);

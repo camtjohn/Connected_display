@@ -9,6 +9,7 @@ idf_component_register(
 	"mqtt.c"
 	"mqtt_protocol.c"
 	"device_config.c"
+	"provisioning.c"
 	"spi.c"
 	"sprite.c"
 	"tasks.c"
@@ -20,7 +21,7 @@ idf_component_register(
 	"Views/conway.c"
 	"Views/weather.c"
 	"Views/etchsketch.c"
-	EMBED_TXTFILES "TLS_Keys/ca.crt"
+	"Views/provisioning_view.c"
                     
 	INCLUDE_DIRS
 	"Include"

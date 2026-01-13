@@ -11,6 +11,7 @@ typedef enum {
     EVENT_UI_BUTTON_DOWN,       // Button pressed (goes LOW)
     EVENT_UI_BUTTON_UP,         // Button released (goes HIGH)
     EVENT_UI_ENCODER,
+    EVENT_UI_BUILTIN_BUTTON_LONGPRESS,  // GPIO 0 long press (5 seconds)
     EVENT_MQTT_DATA_RECEIVED,
     EVENT_BRIGHTNESS_CHANGE,
     EVENT_SYSTEM_SLEEP,

@@ -96,16 +96,21 @@ int mqtt_protocol_parse_version(const uint8_t *payload, uint8_t payload_len,
         ESP_LOGE(TAG, "NULL pointer passed to parse_version");
         return -1;
     }
-    
+
     if (payload_len < 1) {
         ESP_LOGE(TAG, "Payload too short for version");
         return -1;
     }
-    
-    version->version = payload[0];
-    
-    ESP_LOGI(TAG, "Version: %d", version->version);
-    
+
+    // Accept either 1-byte or 2-byte versions. When 2 bytes, treat as big-endian.
+    if (payload_len >= 2) {
+        version->version = ((uint16_t)payload[0] << 8) | payload[1];
+    } else {
+        version->version = payload[0];
+    }
+
+    ESP_LOGI(TAG, "Version: %u", version->version);
+
     return 0;
 }
 
@@ -187,6 +192,41 @@ int mqtt_protocol_build_device_config(const char **strings, uint8_t num_strings,
             idx += str_len;
         }
     }
+    
+    return total_len;
+}
+
+int mqtt_protocol_build_heartbeat(const char *device_name, uint8_t *buffer, uint8_t buffer_size) {
+    if (device_name == NULL || buffer == NULL) {
+        ESP_LOGE(TAG, "Invalid parameters for build_heartbeat");
+        return -1;
+    }
+    
+    // Calculate string length safely
+    uint8_t name_len = 0;
+    while (name_len < 255 && device_name[name_len] != '\0') {
+        name_len++;
+    }
+    
+    if (name_len > 32) {
+        ESP_LOGW(TAG, "Device name exceeds 32 bytes (%d), capping", name_len);
+        name_len = 32;
+    }
+    
+    uint8_t payload_len = 1 + name_len;  // 1 byte for length + name data
+    uint8_t total_len = MQTT_PROTOCOL_HEADER_SIZE + payload_len;
+    
+    if (total_len > buffer_size) {
+        ESP_LOGE(TAG, "Buffer too small for heartbeat: need %d, have %d", total_len, buffer_size);
+        return -1;
+    }
+    
+    // Build message
+    uint8_t idx = 0;
+    buffer[idx++] = MSG_TYPE_HEARTBEAT;
+    buffer[idx++] = payload_len;
+    buffer[idx++] = name_len;
+    memcpy(&buffer[idx], device_name, name_len);
     
     return total_len;
 }

@@ -19,6 +19,7 @@
 #define MSG_TYPE_FORECAST_WEATHER   0x02
 #define MSG_TYPE_DEVICE_CONFIG      0x03
 #define MSG_TYPE_VERSION            0x10
+#define MSG_TYPE_HEARTBEAT          0x11
 #define MSG_TYPE_SHARED_VIEW_REQ    0x20
 #define MSG_TYPE_SHARED_VIEW_FRAME  0x21
 #define MSG_TYPE_SHARED_VIEW_UPDATES 0x22
@@ -163,6 +164,16 @@ int8_t mqtt_protocol_get_actual_temp(uint8_t temp_with_offset);
  */
 int mqtt_protocol_build_device_config(const char **strings, uint8_t num_strings,
                                       uint8_t *buffer, uint8_t buffer_size);
+
+/**
+ * @brief Build heartbeat message with device name
+ * 
+ * @param device_name Device name string
+ * @param buffer Output buffer for complete message (header + payload)
+ * @param buffer_size Size of output buffer
+ * @return Number of bytes written, or -1 on error
+ */
+int mqtt_protocol_build_heartbeat(const char *device_name, uint8_t *buffer, uint8_t buffer_size);
 
 int mqtt_protocol_build_shared_view_request(uint8_t *buffer, uint8_t buffer_size);
 int mqtt_protocol_parse_shared_view_frame(const uint8_t *payload, uint8_t payload_len,

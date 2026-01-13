@@ -5,10 +5,12 @@
 extern TaskHandle_t periodicTaskHandle;
 extern uint16_t view_main[16];
 
-#define DEVICE_NAME                     "dev0"
+//#define DEVICE_NAME                     "dev0"
+
+// Debug build flag - uncomment to use debug topics
+#define DEBUG_BUILD
 
 #define MQTT_BROKER_URL                 "mqtts://jbar.dev:8883"
-// #define MQTT_BROKER_URL             "mqtts://192.168.0.112:8883"
 
 #ifdef DEBUG_BUILD
     // Debug topics for testing (zipcode appended at runtime)

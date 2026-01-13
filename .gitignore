@@ -7,7 +7,6 @@ build/
 tools/mqtt_debugger/payloads/*
 
 # TLS certificates/keys
-#tools/provision_display/*.crt
 *.crt
 *.key
 *.pem

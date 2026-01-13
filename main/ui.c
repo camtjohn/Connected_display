@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "esp_timer.h"
 
 #include "ui.h"
 #include "led_driver.h"
@@ -196,7 +197,6 @@ void Ui__Initialize(void) {
     };
     ESP_ERROR_CHECK(esp_timer_create(&timer_args, &builtin_btn_timer_handle));
 }
-}
 
 // Poll PCNT counters and post events when movement detected
 static void encoder_poll_task(void *arg) {
@@ -344,11 +344,16 @@ static void builtin_button_isr_handler(void *arg) {
     }
 }
 
-// Timer callback - fires if button held for 2+ seconds
+// Timer callback - fires if button held for 1+ seconds
 static void builtin_button_timer_callback(void *arg) {
     // Only trigger if button is still pressed
     if (gpio_get_level(BTN_BUILTIN) == 0) {
-        ESP_LOGI(TAG, "Built-in button LONG PRESS - rebooting to factory app");
-        OTA__Request_Factory_Boot();  // Reboot to factory app (does not return)
+        ESP_LOGI(TAG, "Built-in button LONG PRESS detected (1 second)");
+        // Only post event if system is initialized
+        if (systemEventQueue != NULL) {
+            EventSystem_PostEvent(EVENT_UI_BUILTIN_BUTTON_LONGPRESS, 0, NULL);
+        } else {
+            ESP_LOGW(TAG, "Event queue not initialized yet, ignoring button press");
+        }
     }
-}}
+}

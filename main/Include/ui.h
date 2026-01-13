@@ -24,7 +24,7 @@
 
 // M5Stamp S3 built-in button (GPIO 0)
 #define BTN_BUILTIN 0
-#define BTN_LONGPRESS_MS 2000  // 2 second long press
+#define BTN_LONGPRESS_MS 1000  // 1 second long press (for debugging)
 
 void Ui__Initialize(void);
 
