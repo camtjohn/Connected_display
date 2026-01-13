@@ -4,6 +4,10 @@ sdkconfig.old
 main/.cproject
 build/
  
- # Do not commit TLS certificates/keys
- main/TLS_Keys/*
- 
+tools/mqtt_debugger/payloads/*
+
+# TLS certificates/keys
+#tools/provision_display/*.crt
+*.crt
+*.key
+*.pem
