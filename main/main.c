@@ -18,13 +18,17 @@
 #include "wifi.h"
 #include "ota.h"
 #include "mqtt.h"
+#include "mqtt_protocol.h"
 #include "ui.h"
 #include "led_driver.h"
 #include "view.h"
 #include "weather.h"
 #include "local_time.h"
+#include "provisioning.h"
+#include "provisioning_view.h"
 
 #include "esp_tls.h"
+#include "esp_wifi.h"
 
 const static char *TAG = "WEATHER_STATION: MAIN";
 
@@ -44,6 +48,10 @@ TaskHandle_t periodicTaskHandle_sleep = NULL;
 void periodic_task_sleep_wake(void *);
 TaskHandle_t periodicTaskHandle_server = NULL;
 void periodic_task_check_server(void *);
+TaskHandle_t periodicTaskHandle_heartbeat = NULL;
+void periodic_task_heartbeat(void *);
+void periodic_task_wifi_reconnect(void *);
+void event_listener_task(void *);  // Handles provisioning button press
 
 // Private helper function
 static void handle_wifi_connection_failure(void);
@@ -57,6 +65,9 @@ void app_main(void) {
     Led_driver__Setup();
     // Create bootup screen!
     #endif
+
+    // Initialize Event System early (before UI which uses events)
+    EventSystem_Initialize();
 
     #if(ENABLE_WIFI_MQTT)
     // Initialize device config from NVS first
@@ -87,9 +98,6 @@ void app_main(void) {
     Ui__Initialize();
     #endif
 
-    // Initialize Event System
-    EventSystem_Initialize();
-
     // TASKS
     #if(ENABLE_WIFI_MQTT)
     xTaskCreate(
@@ -109,10 +117,29 @@ void app_main(void) {
         5,                              // Task priority
         &periodicTaskHandle_server      // Task handle
     );
+
+    xTaskCreate(
+        periodic_task_heartbeat,        // Task function
+        "PeriodicTask_Heartbeat",       // Task name (for debugging)
+        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
+        NULL,                           // Task parameter
+        5,                              // Task priority
+        &periodicTaskHandle_heartbeat   // Task handle
+    );
     #endif
 
     // Start Event System tasks and timers
     EventSystem_StartTasks();
+
+    // Start event listener task to handle provisioning button
+    xTaskCreate(
+        event_listener_task,            // Task function
+        "EventListenerTask",            // Task name (for debugging)
+        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
+        NULL,                           // Task parameter
+        6,                              // Task priority
+        NULL                            // Task handle
+    );
 
     // Main loop just sleeps - all work is done in tasks and event handlers
     while (1) {
@@ -126,25 +153,39 @@ static void handle_wifi_connection_failure(void) {
     ESP_LOGI(TAG, "WiFi connection failed - displaying offline view");
     
     // Check if credentials exist at all
-    DeviceConfig *config = Device_Config__Get();
-    if (config == NULL || strlen(config->wifi_ssid) == 0) {
+    char ssid[32] = {0};
+    if (Device_Config__Get_WiFi_SSID(ssid, sizeof(ssid)) != 0 || strlen(ssid) == 0) {
         ESP_LOGE(TAG, "No WiFi credentials configured");
         ESP_LOGW(TAG, "=================================");
         ESP_LOGW(TAG, "No WiFi Credentials Found");
-        ESP_LOGW(TAG, "BTN1: Provision WiFi");
+        ESP_LOGW(TAG, "BTN1: Enter provisioning mode");
         ESP_LOGW(TAG, "BTN4: Continue offline");
         ESP_LOGW(TAG, "=================================");
         
         // Allow user to provision or continue offline
         while (1) {
             if (Ui__Is_Button_Pressed(1)) {  // BTN_1 - Provision
-                ESP_LOGI(TAG, "Rebooting to factory app for provisioning");
-                vTaskDelay(pdMS_TO_TICKS(500));
-                OTA__Request_Factory_Boot();
+                ESP_LOGI(TAG, "Starting WiFi provisioning (BTN1)");
+                vTaskDelay(pdMS_TO_TICKS(300));
+                // Optional: show provisioning view
+                Provisioning_View__Initialize();
+                view_frame_t prov_frame;
+                Provisioning_View__Get_frame(&prov_frame);
+                memcpy(View_red, prov_frame.red, sizeof(View_red));
+                memcpy(View_green, prov_frame.green, sizeof(View_green));
+                memcpy(View_blue, prov_frame.blue, sizeof(View_blue));
+                
+                if (Provisioning__Start() == 0) {
+                    ESP_LOGI(TAG, "Provisioning completed successfully - rebooting");
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    esp_restart();
+                } else {
+                    ESP_LOGE(TAG, "Provisioning failed - staying offline");
+                }
             }
             if (Ui__Is_Button_Pressed(4)) {  // BTN_4 - Continue offline
                 ESP_LOGI(TAG, "Continuing offline without WiFi credentials");
-                vTaskDelay(pdMS_TO_TICKS(500));
+                vTaskDelay(pdMS_TO_TICKS(300));
                 break;
             }
             vTaskDelay(pdMS_TO_TICKS(100));
@@ -163,14 +204,27 @@ static void handle_wifi_connection_failure(void) {
     // Wait up to 30 seconds for user action
     for (int i = 0; i < 300; i++) {  // 300 x 100ms = 30 seconds
         if (Ui__Is_Button_Pressed(1)) {  // BTN_1 - Provision
-            ESP_LOGI(TAG, "User requested WiFi provisioning - rebooting to factory app");
-            vTaskDelay(pdMS_TO_TICKS(500));
-            OTA__Request_Factory_Boot();
-            // Does not return - reboots to factory
+            ESP_LOGI(TAG, "User requested WiFi provisioning (BTN1)");
+            vTaskDelay(pdMS_TO_TICKS(300));
+            // Optional: show provisioning view
+            Provisioning_View__Initialize();
+            view_frame_t prov_frame;
+            Provisioning_View__Get_frame(&prov_frame);
+            memcpy(View_red, prov_frame.red, sizeof(View_red));
+            memcpy(View_green, prov_frame.green, sizeof(View_green));
+            memcpy(View_blue, prov_frame.blue, sizeof(View_blue));
+            
+            if (Provisioning__Start() == 0) {
+                ESP_LOGI(TAG, "Provisioning completed successfully - rebooting");
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                esp_restart();
+            } else {
+                ESP_LOGE(TAG, "Provisioning failed - continuing offline");
+            }
         }
         if (Ui__Is_Button_Pressed(4)) {  // BTN_4 - Continue offline
             ESP_LOGI(TAG, "User chose to continue offline");
-            vTaskDelay(pdMS_TO_TICKS(500));
+            vTaskDelay(pdMS_TO_TICKS(300));
             break;
         }
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -188,11 +242,6 @@ static void handle_wifi_connection_failure(void) {
         4,  // Lower priority than main tasks
         NULL
     );
-}
-
-// PRIVATE METHODS
-        vTaskDelay(pdMS_TO_TICKS(10000));  // Sleep 10 seconds
-    }
 }
 
 // PRIVATE METHODS
@@ -280,6 +329,65 @@ void periodic_task_check_server(void *pvParameters) {
             vTaskDelayUntil(&time_start_task, unresponsive_server_check_every_ms);
         }
         
+    }
+}
+
+// Define task: Periodically send heartbeat to server
+void periodic_task_heartbeat(void *pvParameters) {
+    const TickType_t heartbeat_interval = pdMS_TO_TICKS(HEARTBEAT_PERIOD_MS);
+    uint8_t heartbeat_msg[32];
+    char device_name[16];
+    
+    while (1) {
+        TickType_t time_start_task = xTaskGetTickCount();
+        
+        // Get device name from NVS and send heartbeat
+        if (Device_Config__Get_Name(device_name, sizeof(device_name)) == 0) {
+            int msg_len = mqtt_protocol_build_heartbeat(device_name, heartbeat_msg, sizeof(heartbeat_msg));
+            if (msg_len > 0) {
+                Mqtt__Publish(MQTT_TOPIC_HEARTBEAT, heartbeat_msg, msg_len);
+                ESP_LOGI(TAG, "Sent heartbeat for device: %s", device_name);
+            } else {
+                ESP_LOGE(TAG, "Failed to build heartbeat message");
+            }
+        } else {
+            ESP_LOGE(TAG, "Failed to read device name for heartbeat");
+        }
+        
+        vTaskDelayUntil(&time_start_task, heartbeat_interval);
+    }
+}
+
+
+// Event listener task: Monitors system events for provisioning button
+void event_listener_task(void *pvParameters) {
+    system_event_t event;
+    
+    while (1) {
+        // Wait for events from the system event queue
+        if (xQueueReceive(systemEventQueue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (event.type == EVENT_UI_BUILTIN_BUTTON_LONGPRESS) {
+                ESP_LOGI(TAG, "Entering WiFi provisioning mode (5-second button press)");
+                
+                // Display provisioning view on LED matrix
+                Provisioning_View__Initialize();
+                view_frame_t prov_frame;
+                Provisioning_View__Get_frame(&prov_frame);
+                memcpy(View_red, prov_frame.red, sizeof(View_red));
+                memcpy(View_green, prov_frame.green, sizeof(View_green));
+                memcpy(View_blue, prov_frame.blue, sizeof(View_blue));
+                
+                // Start provisioning (blocks until user provides WiFi credentials)
+                if (Provisioning__Start() == 0) {
+                    ESP_LOGI(TAG, "Provisioning completed successfully");
+                    ESP_LOGI(TAG, "Rebooting to apply new WiFi credentials");
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    esp_restart();  // Reboot to connect with new credentials
+                } else {
+                    ESP_LOGE(TAG, "Provisioning failed");
+                }
+            }
+        }
     }
 }
 

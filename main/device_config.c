@@ -12,11 +12,15 @@ static struct {
     char device_name[16];
     char zipcode[8];
     char user_name[16];
+    char wifi_ssid[32];
+    char wifi_password[64];
     bool initialized;
 } config_cache = {
     .device_name = "dev0",
     .zipcode = "60607",
     .user_name = "user",
+    .wifi_ssid = "",
+    .wifi_password = "",
     .initialized = false
 };
 
@@ -79,6 +83,32 @@ int Device_Config__Init(void) {
         ESP_LOGW(TAG, "Error reading user name: %s", esp_err_to_name(err));
     } else {
         ESP_LOGI(TAG, "Loaded user name from NVS: %s", config_cache.user_name);
+    }
+    
+    // Read WiFi SSID (optional - may not be set)
+    size_t ssid_len = sizeof(config_cache.wifi_ssid);
+    err = nvs_get_str(nvs_handle, "wifi_ssid", config_cache.wifi_ssid, &ssid_len);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(TAG, "WiFi SSID not found in NVS");
+        config_cache.wifi_ssid[0] = '\0';
+    } else if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Error reading WiFi SSID: %s", esp_err_to_name(err));
+        config_cache.wifi_ssid[0] = '\0';
+    } else {
+        ESP_LOGI(TAG, "Loaded WiFi SSID from NVS: %s", config_cache.wifi_ssid);
+    }
+    
+    // Read WiFi password (optional - may not be set)
+    size_t pass_len = sizeof(config_cache.wifi_password);
+    err = nvs_get_str(nvs_handle, "wifi_password", config_cache.wifi_password, &pass_len);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(TAG, "WiFi password not found in NVS");
+        config_cache.wifi_password[0] = '\0';
+    } else if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Error reading WiFi password: %s", esp_err_to_name(err));
+        config_cache.wifi_password[0] = '\0';
+    } else {
+        ESP_LOGI(TAG, "Loaded WiFi password from NVS");
     }
     
     // Commit writes
@@ -386,5 +416,177 @@ int Device_Config__Set_Client_Key(const char *key, size_t key_len) {
     nvs_close(nvs_handle);
     
     ESP_LOGI(TAG, "Client key saved to NVS (%d bytes)", key_len);
+    return 0;
+}
+
+int Device_Config__Get_CA_Cert(char *ca_buffer, size_t buffer_size, size_t *actual_size) {
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
+        return -1;
+    }
+
+    size_t required_size = 0;
+    err = nvs_get_blob(nvs_handle, "ca_cert", NULL, &required_size);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "CA certificate not found in NVS: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return -1;
+    }
+
+    if (ca_buffer == NULL || buffer_size == 0) {
+        if (actual_size != NULL) {
+            *actual_size = required_size;
+        }
+        nvs_close(nvs_handle);
+        return 0;
+    }
+
+    if (required_size > buffer_size) {
+        ESP_LOGE(TAG, "Buffer too small for CA certificate: %d > %d", required_size, buffer_size);
+        nvs_close(nvs_handle);
+        return -1;
+    }
+
+    err = nvs_get_blob(nvs_handle, "ca_cert", ca_buffer, &required_size);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read CA certificate: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return -1;
+    }
+
+    if (actual_size != NULL) {
+        *actual_size = required_size;
+    }
+
+    nvs_close(nvs_handle);
+    ESP_LOGI(TAG, "Loaded CA certificate from NVS (%d bytes)", required_size);
+    return 0;
+}
+
+int Device_Config__Set_CA_Cert(const char *cert, size_t cert_len) {
+    if (cert == NULL || cert_len == 0) {
+        return -1;
+    }
+
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
+        return -1;
+    }
+
+    err = nvs_set_blob(nvs_handle, "ca_cert", cert, cert_len);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write CA certificate: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return -1;
+    }
+
+    nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+
+    ESP_LOGI(TAG, "CA certificate saved to NVS (%d bytes)", cert_len);
+    return 0;
+}
+
+int Device_Config__Get_WiFi_SSID(char *ssid, size_t max_len) {
+    if (ssid == NULL || max_len == 0) {
+        return -1;
+    }
+    
+    if (!config_cache.initialized) {
+        ESP_LOGW(TAG, "Config not initialized, call Device_Config__Init() first");
+        return -1;
+    }
+    
+    strncpy(ssid, config_cache.wifi_ssid, max_len - 1);
+    ssid[max_len - 1] = '\0';
+    return 0;
+}
+
+int Device_Config__Get_WiFi_Password(char *password, size_t max_len) {
+    if (password == NULL || max_len == 0) {
+        return -1;
+    }
+    
+    if (!config_cache.initialized) {
+        ESP_LOGW(TAG, "Config not initialized, call Device_Config__Init() first");
+        return -1;
+    }
+    
+    strncpy(password, config_cache.wifi_password, max_len - 1);
+    password[max_len - 1] = '\0';
+    return 0;
+}
+
+int Device_Config__Set_WiFi_SSID(const char *ssid) {
+    if (ssid == NULL) {
+        return -1;
+    }
+    
+    // Only write if different
+    if (strcmp(config_cache.wifi_ssid, ssid) == 0) {
+        ESP_LOGD(TAG, "WiFi SSID unchanged, skipping write");
+        return 0;
+    }
+    
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
+        return -1;
+    }
+    
+    err = nvs_set_str(nvs_handle, "wifi_ssid", ssid);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write WiFi SSID: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return -1;
+    }
+    
+    nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+    
+    strncpy(config_cache.wifi_ssid, ssid, sizeof(config_cache.wifi_ssid) - 1);
+    config_cache.wifi_ssid[sizeof(config_cache.wifi_ssid) - 1] = '\0';
+    
+    ESP_LOGI(TAG, "WiFi SSID updated: %s", ssid);
+    return 0;
+}
+
+int Device_Config__Set_WiFi_Password(const char *password) {
+    if (password == NULL) {
+        return -1;
+    }
+    
+    // Only write if different
+    if (strcmp(config_cache.wifi_password, password) == 0) {
+        ESP_LOGD(TAG, "WiFi password unchanged, skipping write");
+        return 0;
+    }
+    
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
+        return -1;
+    }
+    
+    err = nvs_set_str(nvs_handle, "wifi_password", password);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write WiFi password: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return -1;
+    }
+    
+    nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+    
+    strncpy(config_cache.wifi_password, password, sizeof(config_cache.wifi_password) - 1);
+    config_cache.wifi_password[sizeof(config_cache.wifi_password) - 1] = '\0';
+    
+    ESP_LOGI(TAG, "WiFi password updated");
     return 0;
 }

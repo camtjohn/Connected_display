@@ -101,4 +101,57 @@ int Device_Config__Set_Client_Cert(const char *cert, size_t cert_len);
  */
 int Device_Config__Set_Client_Key(const char *key, size_t key_len);
 
+/**
+ * @brief Get CA certificate from NVS
+ * 
+ * @param ca_buffer Buffer to store certificate (allocated by caller)
+ * @param buffer_size Size of buffer
+ * @param actual_size Pointer to store actual certificate size
+ * @return 0 on success, -1 on error
+ */
+int Device_Config__Get_CA_Cert(char *ca_buffer, size_t buffer_size, size_t *actual_size);
+
+/**
+ * @brief Set CA certificate in NVS
+ * 
+ * @param cert Certificate string (null-terminated)
+ * @param cert_len Length of certificate
+ * @return 0 on success, -1 on error
+ */
+int Device_Config__Set_CA_Cert(const char *cert, size_t cert_len);
+
+/**
+ * @brief Get WiFi SSID
+ * 
+ * @param ssid Buffer to store SSID (min 32 bytes)
+ * @param max_len Maximum length of buffer
+ * @return 0 on success, -1 on error
+ */
+int Device_Config__Get_WiFi_SSID(char *ssid, size_t max_len);
+
+/**
+ * @brief Get WiFi Password
+ * 
+ * @param password Buffer to store password (min 64 bytes)
+ * @param max_len Maximum length of buffer
+ * @return 0 on success, -1 on error
+ */
+int Device_Config__Get_WiFi_Password(char *password, size_t max_len);
+
+/**
+ * @brief Set WiFi SSID (writes to NVS)
+ * 
+ * @param ssid WiFi network name to store
+ * @return 0 on success, -1 on error
+ */
+int Device_Config__Set_WiFi_SSID(const char *ssid);
+
+/**
+ * @brief Set WiFi Password (writes to NVS)
+ * 
+ * @param password WiFi password to store
+ * @return 0 on success, -1 on error
+ */
+int Device_Config__Set_WiFi_Password(const char *password);
+
 #endif // DEVICE_CONFIG_H

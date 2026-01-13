@@ -129,15 +129,19 @@ int wifi_init_sta(void)
                                                         &instance_got_ip));
 
     // Get WiFi credentials from NVS
-    DeviceConfig *config = Device_Config__Get();
-    if (config == NULL || strlen(config->wifi_ssid) == 0) {
+    char ssid[32] = {0};
+    char password[64] = {0};
+    
+    if (Device_Config__Get_WiFi_SSID(ssid, sizeof(ssid)) != 0 || strlen(ssid) == 0) {
         ESP_LOGE(TAG, "No WiFi credentials configured in NVS!");
-        return;
+        return -1;
     }
+    
+    Device_Config__Get_WiFi_Password(password, sizeof(password));
 
     wifi_config_t wifi_config = {0};
-    strncpy((char *)wifi_config.sta.ssid, config->wifi_ssid, sizeof(wifi_config.sta.ssid));
-    strncpy((char *)wifi_config.sta.password, config->wifi_password, sizeof(wifi_config.sta.password));
+    strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
     wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
@@ -166,7 +170,7 @@ int wifi_init_sta(void)
     return -1;  // Unexpected state
 }
 
-void Wifi__Start(void)
+int Wifi__Start(void)
 {
     //Initialize NVS
     esp_err_t ret = nvs_flash_init();
