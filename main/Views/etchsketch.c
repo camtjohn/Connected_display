@@ -1,6 +1,8 @@
 #include <string.h>
 #include "esp_system.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/timers.h"
 
 #include "etchsketch.h"
 #include "view.h"
@@ -22,15 +24,21 @@ static uint8_t Paint_color;            // 0=red, 1=green, 2=blue
 static mqtt_shared_view_frame_t shared_view;
 
 #define MAX_PENDING_UPDATES 32
-#define FLUSH_THRESHOLD 8
+#define FLUSH_THRESHOLD 32  // Safety limit to prevent buffer overflow (timer is primary trigger)
+#define FLUSH_TIMER_PERIOD_MS 2000  // 2 seconds of inactivity triggers flush
 static mqtt_shared_pixel_update_t Pending_updates[MAX_PENDING_UPDATES];
 static uint8_t Pending_count;
 static uint8_t Batch_active;
 static uint16_t Last_seq_seen;
 static uint16_t Next_seq_to_send;
 
+// Timer for batching updates
+static TimerHandle_t flush_timer = NULL;
+
 static void apply_pixel_local(uint8_t row, uint8_t col, uint8_t color);
 static void flush_pending(void);
+static void flush_timer_callback(TimerHandle_t timer);
+static void reset_flush_timer(void);
 
 // Private method prototypes
 
@@ -48,6 +56,20 @@ void Etchsketch__Initialize(void) {
     Position_row = 0;
     Paint_mode_active = 0;
     Paint_color = 0;
+
+    // Create the flush timer (don't start it yet)
+    if (flush_timer == NULL) {
+        flush_timer = xTimerCreate(
+            "FlushTimer",                  // Timer name
+            pdMS_TO_TICKS(FLUSH_TIMER_PERIOD_MS),  // Period (2 seconds)
+            pdFALSE,                       // Auto-reload (false = one-shot)
+            NULL,                          // Timer ID
+            flush_timer_callback           // Callback function
+        );
+        if (flush_timer == NULL) {
+            ESP_LOGE(TAG, "Failed to create flush timer");
+        }
+    }
 }
 
 void Etchsketch__On_Enter(void) {
@@ -171,9 +193,19 @@ void Etchsketch__Apply_remote_updates(const mqtt_shared_pixel_update_t *updates,
 }
 
 void Etchsketch__Begin_batch(void) { Batch_active = 1; }
-void Etchsketch__End_batch(void) { Batch_active = 0; flush_pending(); }
+void Etchsketch__End_batch(void) { 
+    Batch_active = 0; 
+    // Don't flush immediately - let the timer handle it
+    // This allows the user to press another button within 2 seconds without sending data
+}
 
 void Etchsketch__Queue_local_pixel(uint8_t row, uint8_t col, uint8_t color) {
+    // Ensure row and col fit in 4 bits (0-15 range)
+    if (row >= 16 || col >= 16) {
+        ESP_LOGW(TAG, "Invalid pixel coordinates: row=%d, col=%d", row, col);
+        return;
+    }
+    
     apply_pixel_local(row, col, color);
 
     // Check if pixel already pending; update color if so
@@ -194,10 +226,9 @@ void Etchsketch__Queue_local_pixel(uint8_t row, uint8_t col, uint8_t color) {
         Pending_count++;
     }
 
-    // Flush when batch reaches threshold
-    if (Pending_count >= FLUSH_THRESHOLD) {
-        flush_pending();
-    }
+    // Reset the flush timer on each new update
+    // This ensures updates only send after 2 seconds of complete inactivity
+    reset_flush_timer();
 }
 
 // Update display frame locally
@@ -222,5 +253,24 @@ static void flush_pending(void) {
         Next_seq_to_send++;
     }
     Pending_count = 0;
+    
+    // Stop the timer since we've flushed
+    if (flush_timer != NULL) {
+        xTimerStop(flush_timer, 0);
+    }
+}
+
+// Timer callback: called after 2 seconds of inactivity
+static void flush_timer_callback(TimerHandle_t timer) {
+    ESP_LOGI(TAG, "Flush timer elapsed - sending pending updates after 2 second pause");
+    flush_pending();
+}
+
+// Reset the flush timer (restarts it from zero)
+static void reset_flush_timer(void) {
+    if (flush_timer != NULL) {
+        // Reset the timer - this stops and restarts it from 0
+        xTimerReset(flush_timer, 0);
+    }
 }
 

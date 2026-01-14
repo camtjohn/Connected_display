@@ -136,7 +136,8 @@
         },
         "shared_view_updates": {
             "type": "0x22",
-            "payload_length": "3 + 3 * count",
+            "payload_length": "3 + (2 * count)",
+            "note": "Row and col are packed into a single byte (4 bits each)",
             "payload_schema": [
                 { "name": "seq", "type": "uint16", "byte_order": "big-endian" },
                 { "name": "count", "type": "uint8" },
@@ -145,14 +146,14 @@
                 "type": "array",
                 "length": "count",
                 "item_schema": [
-                    { "name": "row", "type": "uint8", "range": "0-15" },
-                    { "name": "col", "type": "uint8", "range": "0-15" },
+                    { "name": "row", "type": "4-bit", "range": "0-15", "note": "Upper 4 bits of byte" },
+                    { "name": "col", "type": "4-bit", "range": "0-15", "note": "Lower 4 bits of byte" },
                     { "name": "color", "type": "uint8", "enum": { "0": "red", "1": "green", "2": "blue" } }
                 ]
                 }
             ],
             "examples": [
-                { "seq": 1001, "count": 2, "bytes_hex": "22 08 03 E9 02 05 0A 00 07 03 02" }
+                { "seq": 1001, "count": 2, "row_col_packed": "0x5A (row=5, col=10), 0x73 (row=7, col=3)", "bytes_hex": "22 07 03 E9 02 5A 00 73 02" }
             ]
         }
     }

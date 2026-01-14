@@ -96,9 +96,9 @@ typedef struct {
 } mqtt_shared_view_frame_t;
 
 typedef struct {
-    uint8_t row;
-    uint8_t col;
-    uint8_t color;   // 0=red,1=green,2=blue
+    uint8_t row : 4;      // 4-bit row (0-15)
+    uint8_t col : 4;      // 4-bit col (0-15)
+    uint8_t color;        // 0=red, 1=green, 2=blue
 } mqtt_shared_pixel_update_t;
 
 /**
