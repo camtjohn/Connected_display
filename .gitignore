@@ -5,6 +5,7 @@ main/.cproject
 build/
  
 tools/mqtt_debugger/payloads/*
+tools/ssh_vm/id_ed25519_windows_to_vm
 
 # TLS certificates/keys
 *.crt
