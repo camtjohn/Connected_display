@@ -160,10 +160,11 @@ static void handle_wifi_connection_failure(void) {
         ESP_LOGW(TAG, "No WiFi Credentials Found");
         ESP_LOGW(TAG, "BTN1: Enter provisioning mode");
         ESP_LOGW(TAG, "BTN4: Continue offline");
+        ESP_LOGW(TAG, "Wait 60s to auto-continue offline");
         ESP_LOGW(TAG, "=================================");
         
-        // Allow user to provision or continue offline
-        while (1) {
+        // Allow user to provision or continue offline (timeout after 60 seconds)
+        for (int i = 0; i < 600; i++) {  // 600 x 100ms = 60 seconds
             if (Ui__Is_Button_Pressed(1)) {  // BTN_1 - Provision
                 ESP_LOGI(TAG, "Starting WiFi provisioning (BTN1)");
                 vTaskDelay(pdMS_TO_TICKS(300));
@@ -190,6 +191,7 @@ static void handle_wifi_connection_failure(void) {
             }
             vTaskDelay(pdMS_TO_TICKS(100));
         }
+        ESP_LOGI(TAG, "Continuing in offline mode (timeout reached or button pressed)");
         return;  // Exit without starting retry task (no credentials to retry with)
     }
     

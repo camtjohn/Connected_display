@@ -90,6 +90,10 @@ static const char provisioning_html[] = "<!DOCTYPE html>"
 "<label for='password'>WiFi Password:</label>"
 "<input type='password' id='password' name='password' required placeholder='Your WiFi Password'>"
 "</div>"
+"<div class='form-group'>"
+"<label for='user_name'>Name the device:</label>"
+"<input type='text' id='user_name' name='user_name' required placeholder='Device name'>"
+"</div>"
 "<input type='submit' value='Connect'>"
 "</form>"
 "<div class='info'><p>Your device will restart and connect to the WiFi network.</p></div>"
@@ -169,6 +173,7 @@ static esp_err_t provisioning_post_handler(httpd_req_t *req) {
     // Parse form data (simple URL-encoded parser)
     char ssid[WIFI_SSID_MAX_LEN] = {0};
     char password[WIFI_PASS_MAX_LEN] = {0};
+    char user_name[64] = {0};
     
     // Find ssid parameter
     char *ssid_start = strstr(buf, "ssid=");
@@ -208,6 +213,25 @@ static esp_err_t provisioning_post_handler(httpd_req_t *req) {
         }
     }
     
+    // Find user_name parameter
+    char *name_start = strstr(buf, "user_name=");
+    if (name_start) {
+        name_start += 10;  // Skip "user_name="
+        char *name_end = strchr(name_start, '&');
+        if (!name_end) name_end = strchr(name_start, '\0');
+        
+        int name_len = name_end - name_start;
+        if (name_len > 0 && name_len < sizeof(user_name)) {
+            strncpy(user_name, name_start, name_len);
+            user_name[name_len] = '\0';
+            
+            // URL decode simple case (spaces as +)
+            for (int i = 0; user_name[i]; i++) {
+                if (user_name[i] == '+') user_name[i] = ' ';
+            }
+        }
+    }
+    
     // Validate credentials
     if (strlen(ssid) == 0) {
         ESP_LOGE(TAG, "SSID is empty");
@@ -221,10 +245,18 @@ static esp_err_t provisioning_post_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
     
+    if (strlen(user_name) == 0) {
+        ESP_LOGE(TAG, "Device name is empty");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Device name cannot be empty");
+        return ESP_FAIL;
+    }
+    
     // Save credentials using device config
     ESP_LOGI(TAG, "Saving WiFi credentials - SSID: %s", ssid);
     Device_Config__Set_WiFi_SSID(ssid);
     Device_Config__Set_WiFi_Password(password);
+    Device_Config__Set_UserName(user_name);
+    ESP_LOGI(TAG, "Device name set to: %s", user_name);
     
     // Send success page
     httpd_resp_set_type(req, "text/html; charset=utf-8");
