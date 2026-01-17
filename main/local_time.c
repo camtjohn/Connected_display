@@ -16,11 +16,6 @@ Sleep_event_config find_assign_next_event(uint16_t);
 void assign_next_event(Sleep_event_config*, uint16_t, uint16_t);
 
 void Local_Time__Init_SNTP(void) {
-    // sntp_set_sync_interval(7* 24 * 60 * 60 * 1000UL);  // 1 week
-    // esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-    // esp_sntp_setservername(0, "pool.ntp.org");
-    // esp_sntp_init();
-    
     esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     esp_netif_sntp_init(&config);
 

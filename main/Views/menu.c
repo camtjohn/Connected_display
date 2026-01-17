@@ -9,7 +9,7 @@
 static const char *TAG = "WEATHER_STATION: MENU";
 
 // Private static variables
-static View_type Menu_current_view;
+static Menu_view_type Menu_current_view;
 
 const uint16_t image_weather_red[16] = {0x0000, 0x00C0, 0x0D20, 0x1210, 0x210C, 0x2012, 0x2002, 0x1804,
                                         0x200C, 0x400A, 0x3FF1, 0x0041, 0x0041, 0x0022, 0x001C, 0x0000};
@@ -37,17 +37,34 @@ const uint16_t image_etchsketch_green[16] = {0x0000, 0x0000, 0x0000, 0x0000, 0x0
 
 // Private method prototypes
 
-
 // PUBLIC METHODS
 // Menu: Show images for each category when rotate knob (weather, conway, etch...)
 
 void Menu__Initialize(void) {
-    Menu_current_view = VIEW_WEATHER;
+    Menu_current_view = MENU_VIEW_WEATHER;
 }
 
 void Menu__Get_view(view_frame_t *frame) {    
     if (!frame) return;
+    
+    // Map Menu_view_type to actual View_type for display
+    View_type view_to_display;
     switch(Menu_current_view) {
+        case MENU_VIEW_WEATHER:
+            view_to_display = VIEW_WEATHER;
+            break;
+        case MENU_VIEW_CONWAY:
+            view_to_display = VIEW_CONWAY;
+            break;
+        case MENU_VIEW_ETCHSKETCH:
+            view_to_display = VIEW_ETCHSKETCH;
+            break;
+        default:
+            view_to_display = VIEW_WEATHER;
+            break;
+    }
+    
+    switch(view_to_display) {
     case VIEW_WEATHER:
         memcpy(frame->red, image_weather_red, sizeof(frame->red));
         memcpy(frame->green, image_weather_green, sizeof(frame->green));
@@ -70,22 +87,32 @@ void Menu__Get_view(view_frame_t *frame) {
 
 View_type Menu__Get_current_view(void) {
     // ESP_LOGI(TAG, "getting curr view: %d", Menu_current_view);
-    return Menu_current_view;
+    // Map menu view to actual View_type
+    switch(Menu_current_view) {
+        case MENU_VIEW_WEATHER:
+            return VIEW_WEATHER;
+        case MENU_VIEW_CONWAY:
+            return VIEW_CONWAY;
+        case MENU_VIEW_ETCHSKETCH:
+            return VIEW_ETCHSKETCH;
+        default:
+            return VIEW_WEATHER;
+    }
 }
 
 // Methods performed on UI events (encoder/button presses)
 void Menu__UI_Encoder_Top(uint8_t direction) {
     // ESP_LOGI(TAG, "Menu: top enc= %d\n", direction);
     if(direction == 0) {
-        if(Menu_current_view > VIEW_WEATHER) {
-            Menu_current_view --;
+        if(Menu_current_view > MENU_VIEW_WEATHER) {
+            Menu_current_view--;
         } else {
-            Menu_current_view = (NUM_MAIN_VIEWS - 1);
+            Menu_current_view = (NUM_MENU_VIEWS - 1);
         }
     } else {
-        Menu_current_view ++;
-        if(Menu_current_view == NUM_MAIN_VIEWS) {
-            Menu_current_view = VIEW_WEATHER;
+        Menu_current_view++;
+        if(Menu_current_view == NUM_MENU_VIEWS) {
+            Menu_current_view = MENU_VIEW_WEATHER;
         }
     }
 }

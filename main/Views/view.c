@@ -20,6 +20,8 @@
 #include "weather.h"
 #include "conway.h"
 #include "etchsketch.h"
+#include "provisioning_view.h"
+#include "bootup_view.h"
 
 static const char *TAG = "WEATHER_STATION: VIEW";
 
@@ -66,7 +68,7 @@ void post_event(event_type_t, uint32_t);
 // PUBLIC METHODS
 
 void View__Initialize() {
-    View_current_view = VIEW_WEATHER;
+    View_current_view = VIEW_BOOTUP;
     Display_State = 1;
     Brightness = LEVEL_MIN;
     View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
@@ -75,6 +77,8 @@ void View__Initialize() {
     Weather__Initialize();
     Conway__Initialize();
     Etchsketch__Initialize();
+    Provisioning_View__Initialize();
+    Bootup_View__Initialize();
 
     displayUpdateSemaphore = xSemaphoreCreateBinary();
 
@@ -86,6 +90,8 @@ void View__Initialize() {
         8,                             // Task priority
         &blockingTaskHandle_display       // Task handle
     );
+
+    xSemaphoreGive(displayUpdateSemaphore);
 }
 
 // Event system calls this to set UI event bits
@@ -110,6 +116,7 @@ void View__Process_UI(uint16_t UI_event) {
         if (View_current_view == VIEW_MENU) {
             View_current_view = Menu__Get_current_view();
             build_new_view();
+            Led_driver__Update_RAM(&View_frame);  // immediate refresh on view change
             // On entering etchsketch view, request sync
             if (View_current_view == VIEW_ETCHSKETCH) {
                 Etchsketch__On_Enter();
@@ -117,6 +124,7 @@ void View__Process_UI(uint16_t UI_event) {
         } else {
             View_current_view = VIEW_MENU;
             build_new_view();
+            Led_driver__Update_RAM(&View_frame);  // immediate refresh on view change
         }
     }
 
@@ -231,6 +239,33 @@ void View__Process_UI(uint16_t UI_event) {
             }
         }
         break;
+    case VIEW_PROVISIONING:
+        // Buttons
+        if(UI_event & 0x02) {   //btn2
+            Provisioning_View__UI_Button(1);
+        }
+        if(UI_event & 0x04) {   //btn3
+            Provisioning_View__UI_Button(2);
+        }
+        if(UI_event & 0x08) {   //btn4
+            Provisioning_View__UI_Button(3);
+        }
+        //enc1
+        if(UI_event & 0x10) {
+            Provisioning_View__UI_Encoder_Top(0);
+        } else if(UI_event & 0x20) {
+            Provisioning_View__UI_Encoder_Top(1);
+        }
+        //enc2
+        if(UI_event & 0x40) {
+            Provisioning_View__UI_Encoder_Side(0);
+        } else if(UI_event & 0x80) {
+            Provisioning_View__UI_Encoder_Side(1);
+        }
+        break;
+    case VIEW_BOOTUP:
+        // Bootup view ignores all UI events
+        break;
     case NUM_MAIN_VIEWS:
     default:
         break;
@@ -238,7 +273,6 @@ void View__Process_UI(uint16_t UI_event) {
     
     UI_event = 0;
 
-    // ESP_LOGI(TAG, "ui updating view");
     xSemaphoreGive(displayUpdateSemaphore);
 }
 
@@ -268,6 +302,14 @@ void View__Set_display_state(uint8_t request_state) {
     }
 }
 
+// Switch to a specific view and update display immediately
+void View__Set_view(View_type view) {
+    if (view < NUM_MAIN_VIEWS) {
+        View_current_view = view;
+        xSemaphoreGive(displayUpdateSemaphore);  // Trigger immediate display update
+    }
+}
+
 // PRIVATE METHODS
 
 void build_new_view(void) {
@@ -290,6 +332,14 @@ void build_new_view(void) {
     case VIEW_ETCHSKETCH:
         View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
         Etchsketch__Get_view(&View_frame);
+        break;
+    case VIEW_PROVISIONING:
+        View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
+        Provisioning_View__Get_frame(&View_frame);
+        break;
+    case VIEW_BOOTUP:
+        View_refresh_rate_ms = 500;  // Update every 500ms for animation effect
+        Bootup_View__Get_frame(&View_frame);
         break;
     default:
         break;

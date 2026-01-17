@@ -29,6 +29,8 @@ typedef enum {
   VIEW_WEATHER,
   VIEW_CONWAY,
   VIEW_ETCHSKETCH,
+  VIEW_PROVISIONING,
+  VIEW_BOOTUP,
   NUM_MAIN_VIEWS
 } View_type;
 
@@ -48,4 +50,5 @@ void View__Initialize();
 void View__Process_UI(uint16_t);
 void View__Set_display_state(uint8_t state);
 void View__Change_brightness(uint8_t);
+void View__Set_view(View_type view);
 #endif

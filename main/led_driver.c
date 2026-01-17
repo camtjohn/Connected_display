@@ -44,13 +44,16 @@ void Led_driver__Initialize(void) {
     Spi_Handle_Red = Spi__Init(DATA_PIN, CLK_PIN, SPI_MODE, CS_RED);    // Unused pin 46 used for CS til incorporate CS into SPI
     Spi_Handle_Blue = Spi__Init(DATA_PIN, CLK_PIN, SPI_MODE, CS_BLUE);    // Unused pin 46 used for CS til incorporate CS into SPI
     #endif
-}
 
-// Send commands to Led drivers at bootup
-void Led_driver__Setup(void) {
     send_setup_messages(CS_RED);
     send_setup_messages(CS_BLUE);
 }
+
+// Send commands to Led drivers at bootup
+// void Led_driver__Setup(void) {
+//     send_setup_messages(CS_RED);
+//     send_setup_messages(CS_BLUE);
+// }
 
 void Led_driver__Update_RAM(view_frame_t *frame) {
     //translate view to RAM

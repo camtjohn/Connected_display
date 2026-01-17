@@ -27,6 +27,14 @@ void Weather__Initialize(void) {
     Weather_today.max_temp = 200;
     Weather_today.precip = 200;
     Weather_today.moon = 200;
+
+    Weather_tomorrow.max_temp = 200;
+    Weather_tomorrow.precip = 200;
+    Weather_tomorrow.moon = 200;
+
+    Weather_next_day.max_temp = 200;
+    Weather_next_day.precip = 200;
+    Weather_next_day.moon = 200;
 }
 
 void Weather__Get_view(view_frame_t *frame) {

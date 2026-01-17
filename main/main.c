@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdbool.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -29,106 +30,51 @@
 
 #include "esp_tls.h"
 #include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_netif.h"
 
 const static char *TAG = "WEATHER_STATION: MAIN";
 
-#define ENABLE_DISPLAY      1
-#define ENABLE_WIFI_MQTT    1
 #define ENABLE_DEBUG_MODE   1
 
 #define WIFI_PROVISION_BUTTON BTN_1  // Button to trigger factory provisioning
 
-// VIEW
-uint16_t View_red[16];
-uint16_t View_green[16];
-uint16_t View_blue[16];
-
 // TASK
 TaskHandle_t periodicTaskHandle_sleep = NULL;
-void periodic_task_sleep_wake(void *);
+static void periodic_task_sleep_wake(void *);
 TaskHandle_t periodicTaskHandle_server = NULL;
-void periodic_task_check_server(void *);
+static void periodic_task_check_server(void *);
 TaskHandle_t periodicTaskHandle_heartbeat = NULL;
-void periodic_task_heartbeat(void *);
-void periodic_task_wifi_reconnect(void *);
-void event_listener_task(void *);  // Handles provisioning button press
+static void periodic_task_heartbeat(void *);
+static void periodic_task_wifi_reconnect(void *);
+static void event_listener_task(void *);  // Handles provisioning button press
 
 // Private helper function
+static void startup_wifi(void);
 static void handle_wifi_connection_failure(void);
+static void start_connected_services(void);
+static void on_got_ip(void* arg, esp_event_base_t base, int32_t event_id, void* event_data);
+
+// One-time start guard for network-dependent services
+static bool s_services_started = false;
 
 void app_main(void) {
     ESP_LOGI(TAG, "Starting up");
 
-    #if(ENABLE_DISPLAY) 
-    View__Initialize();
     Led_driver__Initialize();
-    Led_driver__Setup();
-    // Create bootup screen!
-    #endif
+    View__Initialize();
 
     // Initialize Event System early (before UI which uses events)
     EventSystem_Initialize();
 
-    #if(ENABLE_WIFI_MQTT)
     // Initialize device config from NVS first
-    if (Device_Config__Init() != 0) {
-        ESP_LOGE(TAG, "Failed to initialize device config!");
-    }
+    Device_Config__Init();
     
-    // Initialize UI early so we can check button presses
     Ui__Initialize();
-    
-    Local_Time__Init_SNTP();
-    
-    // Attempt WiFi connection (will return after connect or failure)
-    int wifi_result = Wifi__Start();
-    
-    // Check if WiFi connection failed
-    if (wifi_result != 0) {
-        ESP_LOGW(TAG, "WiFi connection failed - entering offline mode");
-        handle_wifi_connection_failure();
-        // Function returns if user chooses to continue without WiFi
-        // or reboots to factory if user wants to provision
-    }
-    
-    // WiFi connected successfully, proceed with normal startup
-    OTA__Init();
-    Mqtt__Start();
-    #else
-    Ui__Initialize();
-    #endif
 
-    // TASKS
-    #if(ENABLE_WIFI_MQTT)
-    xTaskCreate(
-        periodic_task_sleep_wake,       // Task function
-        "PeriodicTask_SleepWake",       // Task name (for debugging)
-        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
-        NULL,                           // Task parameter
-        5,                              // Task priority
-        &periodicTaskHandle_sleep       // Task handle
-    );
-
-    xTaskCreate(
-        periodic_task_check_server,     // Task function
-        "PeriodicTask_CheckServer",     // Task name (for debugging)
-        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
-        NULL,                           // Task parameter
-        5,                              // Task priority
-        &periodicTaskHandle_server      // Task handle
-    );
-
-    xTaskCreate(
-        periodic_task_heartbeat,        // Task function
-        "PeriodicTask_Heartbeat",       // Task name (for debugging)
-        (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
-        NULL,                           // Task parameter
-        5,                              // Task priority
-        &periodicTaskHandle_heartbeat   // Task handle
-    );
-    #endif
-
-    // Start Event System tasks and timers
+    // Start up WiFi (connect, register IP handler, and IP check)
+    startup_wifi();
+    
     EventSystem_StartTasks();
 
     // Start event listener task to handle provisioning button
@@ -148,50 +94,122 @@ void app_main(void) {
     }
 }
 
+// PRIVATE METHODS
+
+// Start up Wifi actions
+static void startup_wifi(void) {
+    // Attempt WiFi connection (will return after connect or failure)
+    int wifi_result = Wifi__Start();
+    
+    // Register handler to start services when IP is obtained (handles late connects)
+    esp_event_handler_instance_t ip_event_instance;
+    esp_err_t reg_err = esp_event_handler_instance_register(
+        IP_EVENT,
+        IP_EVENT_STA_GOT_IP,
+        &on_got_ip,
+        NULL,
+        &ip_event_instance
+    );
+    if (reg_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register IP event handler: %s", esp_err_to_name(reg_err));
+    }
+    
+    // Check if WiFi connection failed
+    if (wifi_result != 0) {
+        ESP_LOGW(TAG, "WiFi connection failed - entering offline mode");
+        handle_wifi_connection_failure();
+        // Function returns if user chooses to continue without WiFi
+        // or reboots to factory if user wants to provision
+    }
+
+    // Also handle the case where IP was already acquired before handler registration
+    esp_netif_t* sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (sta) {
+        esp_netif_ip_info_t ip;
+        if (esp_netif_get_ip_info(sta, &ip) == ESP_OK && ip.ip.addr != 0) {
+            ESP_LOGI(TAG, "IP already assigned; starting connected services now");
+            start_connected_services();
+        }
+    }
+    
+    // WiFi startup complete - switch from bootup view to menu
+    View__Set_view(VIEW_MENU);
+}
+
+// Start services that require network connectivity (idempotent)
+static void start_connected_services(void) {
+    if (s_services_started) return;
+    OTA__Init();
+    Mqtt__Start();
+    // Initialize SNTP/time after network is up
+    Local_Time__Init_SNTP();
+    s_services_started = true;
+    ESP_LOGI(TAG, "Network services started (OTA, MQTT)");
+
+    // Start tasks that depend on MQTT/network being up
+    if (periodicTaskHandle_sleep == NULL) {
+        xTaskCreate(
+            periodic_task_sleep_wake,       // Task function
+            "PeriodicTask_SleepWake",       // Task name (for debugging)
+            (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
+            NULL,                           // Task parameter
+            5,                              // Task priority
+            &periodicTaskHandle_sleep       // Task handle
+        );
+    }
+    if (periodicTaskHandle_server == NULL) {
+        xTaskCreate(
+            periodic_task_check_server,     // Task function
+            "PeriodicTask_CheckServer",     // Task name (for debugging)
+            (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
+            NULL,                           // Task parameter
+            5,                              // Task priority
+            &periodicTaskHandle_server      // Task handle
+        );
+    }
+    if (periodicTaskHandle_heartbeat == NULL) {
+        xTaskCreate(
+            periodic_task_heartbeat,        // Task function
+            "PeriodicTask_Heartbeat",       // Task name (for debugging)
+            (2*configMINIMAL_STACK_SIZE),   // Stack size (words)
+            NULL,                           // Task parameter
+            5,                              // Task priority
+            &periodicTaskHandle_heartbeat   // Task handle
+        );
+    }
+}
+
+// Event handler: called when station gets an IP address
+static void on_got_ip(void* arg, esp_event_base_t base, int32_t event_id, void* event_data) {
+    ESP_LOGI(TAG, "Got IP event received; starting services if needed");
+    start_connected_services();
+}
+
 // Handle WiFi connection failure - show view and wait for user action
 static void handle_wifi_connection_failure(void) {
-    ESP_LOGI(TAG, "WiFi connection failed - displaying offline view");
+    ESP_LOGI(TAG, "WiFi connection failed - displaying provision prompt");
     
     // Check if credentials exist at all
     char ssid[32] = {0};
     if (Device_Config__Get_WiFi_SSID(ssid, sizeof(ssid)) != 0 || strlen(ssid) == 0) {
-        ESP_LOGE(TAG, "No WiFi credentials configured");
         ESP_LOGW(TAG, "=================================");
-        ESP_LOGW(TAG, "No WiFi Credentials Found");
+        ESP_LOGE(TAG, "No WiFi credentials configured");
         ESP_LOGW(TAG, "BTN1: Enter provisioning mode");
         ESP_LOGW(TAG, "BTN4: Continue offline");
         ESP_LOGW(TAG, "Wait 60s to auto-continue offline");
         ESP_LOGW(TAG, "=================================");
         
         // Allow user to provision or continue offline (timeout after 60 seconds)
+        View__Set_view(VIEW_PROVISIONING);
+        Provisioning_View__Set_context(0);  // No credentials
+        
+        // Wait for user action or timeout (handled by view system now)
         for (int i = 0; i < 600; i++) {  // 600 x 100ms = 60 seconds
-            if (Ui__Is_Button_Pressed(1)) {  // BTN_1 - Provision
-                ESP_LOGI(TAG, "Starting WiFi provisioning (BTN1)");
-                vTaskDelay(pdMS_TO_TICKS(300));
-                // Optional: show provisioning view
-                Provisioning_View__Initialize();
-                view_frame_t prov_frame;
-                Provisioning_View__Get_frame(&prov_frame);
-                memcpy(View_red, prov_frame.red, sizeof(View_red));
-                memcpy(View_green, prov_frame.green, sizeof(View_green));
-                memcpy(View_blue, prov_frame.blue, sizeof(View_blue));
-                
-                if (Provisioning__Start() == 0) {
-                    ESP_LOGI(TAG, "Provisioning completed successfully - rebooting");
-                    vTaskDelay(pdMS_TO_TICKS(1000));
-                    esp_restart();
-                } else {
-                    ESP_LOGE(TAG, "Provisioning failed - staying offline");
-                }
-            }
-            if (Ui__Is_Button_Pressed(4)) {  // BTN_4 - Continue offline
-                ESP_LOGI(TAG, "Continuing offline without WiFi credentials");
-                vTaskDelay(pdMS_TO_TICKS(300));
-                break;
-            }
             vTaskDelay(pdMS_TO_TICKS(100));
         }
+        
         ESP_LOGI(TAG, "Continuing in offline mode (timeout reached or button pressed)");
+        View__Set_view(VIEW_MENU);  // Return to menu
         return;  // Exit without starting retry task (no credentials to retry with)
     }
     
@@ -204,31 +222,11 @@ static void handle_wifi_connection_failure(void) {
     ESP_LOGW(TAG, "=================================");
     
     // Wait up to 30 seconds for user action
+    View__Set_view(VIEW_PROVISIONING);
+    Provisioning_View__Set_context(1);  // Has credentials but failed
+    
+    // Wait for user action or timeout (handled by view system now)
     for (int i = 0; i < 300; i++) {  // 300 x 100ms = 30 seconds
-        if (Ui__Is_Button_Pressed(1)) {  // BTN_1 - Provision
-            ESP_LOGI(TAG, "User requested WiFi provisioning (BTN1)");
-            vTaskDelay(pdMS_TO_TICKS(300));
-            // Optional: show provisioning view
-            Provisioning_View__Initialize();
-            view_frame_t prov_frame;
-            Provisioning_View__Get_frame(&prov_frame);
-            memcpy(View_red, prov_frame.red, sizeof(View_red));
-            memcpy(View_green, prov_frame.green, sizeof(View_green));
-            memcpy(View_blue, prov_frame.blue, sizeof(View_blue));
-            
-            if (Provisioning__Start() == 0) {
-                ESP_LOGI(TAG, "Provisioning completed successfully - rebooting");
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                esp_restart();
-            } else {
-                ESP_LOGE(TAG, "Provisioning failed - continuing offline");
-            }
-        }
-        if (Ui__Is_Button_Pressed(4)) {  // BTN_4 - Continue offline
-            ESP_LOGI(TAG, "User chose to continue offline");
-            vTaskDelay(pdMS_TO_TICKS(300));
-            break;
-        }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     
@@ -246,10 +244,9 @@ static void handle_wifi_connection_failure(void) {
     );
 }
 
-// PRIVATE METHODS
 
 // Periodic task to retry WiFi connection in background when offline
-void periodic_task_wifi_reconnect(void *pvParameters) {
+static void periodic_task_wifi_reconnect(void *pvParameters) {
     int reconnect_delay_seconds = 5;  // Start with 5 seconds
     const int MAX_RECONNECT_DELAY = 300;  // Max 5 minutes
     
@@ -273,7 +270,7 @@ void periodic_task_wifi_reconnect(void *pvParameters) {
 }
 
 // Define task: Sleep/Wakeup according to configuration
-void periodic_task_sleep_wake(void *pvParameters) {
+static void periodic_task_sleep_wake(void *pvParameters) {
     if(NUM_TIME_CONFIGS > 0) {
         while (1) {
             Sleep_event_config next_event = Local_Time__Get_next_sleep_event();
@@ -312,7 +309,7 @@ void periodic_task_sleep_wake(void *pvParameters) {
 
 // Define task: Periodically check that server actively communicating
 // every x minutes, get status from mqtt module which sets flag when it receives an update. then reset flag.
-void periodic_task_check_server(void *pvParameters) {
+static void periodic_task_check_server(void *pvParameters) {
     // After method runs, delay for this amount of ms
     const TickType_t active_server_check_every_ms = pdMS_TO_TICKS(CHECK_SERVER_PERIOD_MS);
     const TickType_t unresponsive_server_check_every_ms = pdMS_TO_TICKS(CHECK_UNRESPONSIVE_SERVER_PERIOD_MS);
@@ -335,7 +332,7 @@ void periodic_task_check_server(void *pvParameters) {
 }
 
 // Define task: Periodically send heartbeat to server
-void periodic_task_heartbeat(void *pvParameters) {
+static void periodic_task_heartbeat(void *pvParameters) {
     const TickType_t heartbeat_interval = pdMS_TO_TICKS(HEARTBEAT_PERIOD_MS);
     uint8_t heartbeat_msg[32];
     char device_name[16];
@@ -362,7 +359,7 @@ void periodic_task_heartbeat(void *pvParameters) {
 
 
 // Event listener task: Monitors system events for provisioning button
-void event_listener_task(void *pvParameters) {
+static void event_listener_task(void *pvParameters) {
     system_event_t event;
     
     while (1) {
@@ -371,23 +368,9 @@ void event_listener_task(void *pvParameters) {
             if (event.type == EVENT_UI_BUILTIN_BUTTON_LONGPRESS) {
                 ESP_LOGI(TAG, "Entering WiFi provisioning mode (5-second button press)");
                 
-                // Display provisioning view on LED matrix
-                Provisioning_View__Initialize();
-                view_frame_t prov_frame;
-                Provisioning_View__Get_frame(&prov_frame);
-                memcpy(View_red, prov_frame.red, sizeof(View_red));
-                memcpy(View_green, prov_frame.green, sizeof(View_green));
-                memcpy(View_blue, prov_frame.blue, sizeof(View_blue));
-                
-                // Start provisioning (blocks until user provides WiFi credentials)
-                if (Provisioning__Start() == 0) {
-                    ESP_LOGI(TAG, "Provisioning completed successfully");
-                    ESP_LOGI(TAG, "Rebooting to apply new WiFi credentials");
-                    vTaskDelay(pdMS_TO_TICKS(1000));
-                    esp_restart();  // Reboot to connect with new credentials
-                } else {
-                    ESP_LOGE(TAG, "Provisioning failed");
-                }
+                // Display provisioning view - user can trigger provisioning or cancel
+                View__Set_view(VIEW_PROVISIONING);
+                Provisioning_View__Set_context(1);  // Triggered manually
             }
         }
     }

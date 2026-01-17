@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
+#include "freertos/semphr.h"
 
 #include "etchsketch.h"
 #include "view.h"
@@ -34,11 +35,15 @@ static uint16_t Next_seq_to_send;
 
 // Timer for batching updates
 static TimerHandle_t flush_timer = NULL;
+// Worker to perform flush outside timer task
+static TaskHandle_t flush_worker_task_handle = NULL;
+static SemaphoreHandle_t flush_sem = NULL;
 
 static void apply_pixel_local(uint8_t row, uint8_t col, uint8_t color);
 static void flush_pending(void);
 static void flush_timer_callback(TimerHandle_t timer);
 static void reset_flush_timer(void);
+static void flush_worker_task(void *pvParameters);
 
 // Private method prototypes
 
@@ -51,6 +56,13 @@ void Etchsketch__Initialize(void) {
     Batch_active = 0;
     Last_seq_seen = 0;
     Next_seq_to_send = 0;
+
+    if (flush_sem == NULL) {
+        flush_sem = xSemaphoreCreateBinary();
+        if (flush_sem == NULL) {
+            ESP_LOGE(TAG, "Failed to create flush semaphore");
+        }
+    }
 
     Position_col = 0;
     Position_row = 0;
@@ -68,6 +80,21 @@ void Etchsketch__Initialize(void) {
         );
         if (flush_timer == NULL) {
             ESP_LOGE(TAG, "Failed to create flush timer");
+        }
+    }
+
+    // Create worker task to perform flush outside timer context
+    if (flush_worker_task_handle == NULL) {
+        BaseType_t created = xTaskCreate(
+            flush_worker_task,
+            "FlushWorker",
+            3072,          // stack words; generous to avoid overflow
+            NULL,
+            6,             // medium priority
+            &flush_worker_task_handle
+        );
+        if (created != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create flush worker task");
         }
     }
 }
@@ -224,6 +251,13 @@ void Etchsketch__Queue_local_pixel(uint8_t row, uint8_t col, uint8_t color) {
         Pending_updates[Pending_count].col = col;
         Pending_updates[Pending_count].color = color;
         Pending_count++;
+        
+        // Flush if buffer is full to make room for more pixels
+        if (Pending_count >= MAX_PENDING_UPDATES) {
+            flush_pending();
+            // Reset timer after flush so inactivity countdown restarts
+            reset_flush_timer();
+        }
     }
 
     // Reset the flush timer on each new update
@@ -262,8 +296,10 @@ static void flush_pending(void) {
 
 // Timer callback: called after 2 seconds of inactivity
 static void flush_timer_callback(TimerHandle_t timer) {
-    ESP_LOGI(TAG, "Flush timer elapsed - sending pending updates after 2 second pause");
-    flush_pending();
+    // Keep timer task lean: just notify worker
+    if (flush_sem != NULL) {
+        xSemaphoreGive(flush_sem);
+    }
 }
 
 // Reset the flush timer (restarts it from zero)
@@ -271,6 +307,17 @@ static void reset_flush_timer(void) {
     if (flush_timer != NULL) {
         // Reset the timer - this stops and restarts it from 0
         xTimerReset(flush_timer, 0);
+    }
+}
+
+// Worker task: waits for timer signal then flushes pending updates
+static void flush_worker_task(void *pvParameters) {
+    (void)pvParameters;
+    for (;;) {
+        if (flush_sem != NULL) {
+            xSemaphoreTake(flush_sem, portMAX_DELAY);
+            flush_pending();
+        }
     }
 }
 
