@@ -1,6 +1,8 @@
 #ifndef MQTT_H
 #define MQTT_H
 
+#include <stdbool.h>
+
 // Bad implementation of allowing mqtt module access task to pause/resume while updating display
 extern TaskHandle_t periodicTaskHandle;
 extern uint16_t view_main[16];
@@ -39,6 +41,9 @@ void Mqtt__Start(void);
 void Mqtt__Send_debug_msg(char *);
 uint8_t Mqtt__Get_server_status(void);
 void Mqtt__Reset_server_status(void);
+bool Mqtt__Is_connected(void);
+bool Mqtt__Is_offline(void);
+void Mqtt__Set_offline_mode(bool offline);
 // Private move to mqtt.c?
 void Mqtt__Subscribe(char*);
 void Mqtt__Publish(char *topic, const uint8_t *data, uint16_t data_len);

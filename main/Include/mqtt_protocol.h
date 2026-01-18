@@ -22,7 +22,7 @@
 #define MSG_TYPE_HEARTBEAT          0x11
 #define MSG_TYPE_SHARED_VIEW_REQ    0x20
 #define MSG_TYPE_SHARED_VIEW_FRAME  0x21
-#define MSG_TYPE_SHARED_VIEW_UPDATES 0x22
+
 
 // Protocol Constants
 #define MQTT_PROTOCOL_HEADER_SIZE   2

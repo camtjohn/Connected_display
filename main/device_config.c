@@ -16,9 +16,9 @@ static struct {
     char wifi_password[64];
     bool initialized;
 } config_cache = {
-    .device_name = "dev0",
+    .device_name = "dev00",
     .zipcode = "60607",
-    .user_name = "user",
+    .user_name = "DefaultUser",
     .wifi_ssid = "",
     .wifi_password = "",
     .initialized = false

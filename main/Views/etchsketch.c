@@ -13,25 +13,32 @@
 
 static const char *TAG = "WEATHER_STATION: ETCHSKETCH";
 
+// Color enum for pixel drawing
+typedef enum {
+    RED = 0,
+    GREEN = 1,
+    BLUE = 2
+} pixel_color_t;
+
 // Private static variables
 static uint8_t Position_row;
 static uint8_t Position_col;
 
 // Paint mode tracking
 static uint8_t Paint_mode_active;      // 0=off, 1=paint with button, 2=paint with button2, 3=paint with button3
-static uint8_t Paint_color;            // 0=red, 1=green, 2=blue
+static pixel_color_t Paint_color;      // color for painting
 
-// Inline shared view state and batching
 static mqtt_shared_view_frame_t shared_view;
 
-#define MAX_PENDING_UPDATES 32
-#define FLUSH_THRESHOLD 32  // Safety limit to prevent buffer overflow (timer is primary trigger)
 #define FLUSH_TIMER_PERIOD_MS 2000  // 2 seconds of inactivity triggers flush
-static mqtt_shared_pixel_update_t Pending_updates[MAX_PENDING_UPDATES];
-static uint8_t Pending_count;
-static uint8_t Batch_active;
 static uint16_t Last_seq_seen;
 static uint16_t Next_seq_to_send;
+
+static uint8_t Shared_comm_active;      // 1=have recent comm and allowed to sync
+static uint8_t Initial_full_sync; // 1=waiting for first frame from server
+
+// Button state tracking for multi-button detection
+static uint8_t Active_buttons = 0;      // Bitmask: bit 0 = btn1, bit 1 = btn2, bit 2 = btn3
 
 // Timer for batching updates
 static TimerHandle_t flush_timer = NULL;
@@ -39,23 +46,23 @@ static TimerHandle_t flush_timer = NULL;
 static TaskHandle_t flush_worker_task_handle = NULL;
 static SemaphoreHandle_t flush_sem = NULL;
 
-static void apply_pixel_local(uint8_t row, uint8_t col, uint8_t color);
+// Private method prototypes
 static void flush_pending(void);
 static void flush_timer_callback(TimerHandle_t timer);
-static void reset_flush_timer(void);
 static void flush_worker_task(void *pvParameters);
-
-// Private method prototypes
+static void clear_shared_view(void);
+static void queue_local_pixel(uint8_t row, uint8_t col, pixel_color_t color);
+static void request_full_sync(void);
 
 // PUBLIC METHODS
 
 void Etchsketch__Initialize(void) {
     memset(&shared_view, 0, sizeof(shared_view));
 
-    Pending_count = 0;
-    Batch_active = 0;
     Last_seq_seen = 0;
     Next_seq_to_send = 0;
+    Shared_comm_active = 0;
+    Initial_full_sync = 0;
 
     if (flush_sem == NULL) {
         flush_sem = xSemaphoreCreateBinary();
@@ -100,7 +107,16 @@ void Etchsketch__Initialize(void) {
 }
 
 void Etchsketch__On_Enter(void) {
-    Etchsketch__Request_full_sync();
+    // Use live broker connection status; ignore stale server-activity flag
+    if (Mqtt__Is_connected()) {
+        clear_shared_view();
+        Shared_comm_active = 1;
+        Initial_full_sync = 1;    // expecting full replacement from server
+        request_full_sync();
+    } else {
+        Shared_comm_active = 0;
+        ESP_LOGW(TAG, "No broker comm on enter; staying offline for shared view");
+    }
 }
 
 void Etchsketch__Get_view(view_frame_t *frame) {
@@ -109,7 +125,6 @@ void Etchsketch__Get_view(view_frame_t *frame) {
     memcpy(frame->blue, shared_view.blue, sizeof(shared_view.blue));
     frame->red[Position_row] |= (1 << Position_col);
 }
-
 
 // Methods performed on UI events (encoder/button presses)
 void Etchsketch__UI_Encoder_Top(uint8_t direction) {
@@ -129,8 +144,7 @@ void Etchsketch__UI_Encoder_Top(uint8_t direction) {
     
     // If paint mode active, paint at new position
     if (Paint_mode_active) {
-        Etchsketch__Queue_local_pixel(Position_row, Position_col, Paint_color);
-        ESP_LOGI(TAG, "Paint trail at row=%d col=%d (color=%d)", Position_row, Position_col, Paint_color);
+        queue_local_pixel(Position_row, Position_col, Paint_color);
     }
 }
 
@@ -151,46 +165,75 @@ void Etchsketch__UI_Encoder_Side(uint8_t direction) {
     
     // If paint mode active, paint at new position
     if (Paint_mode_active) {
-        Etchsketch__Queue_local_pixel(Position_row, Position_col, Paint_color);
-        ESP_LOGI(TAG, "Paint trail at row=%d col=%d (color=%d)", Position_row, Position_col, Paint_color);
+        queue_local_pixel(Position_row, Position_col, Paint_color);
     }
 }
 
 void Etchsketch__UI_Button(uint8_t btn) {
+    // Track button state
+    if (btn >= 1 && btn <= 3) {
+        Active_buttons |= (1 << (btn - 1));
+    }
+    
+    // Check if all three buttons are pressed simultaneously
+    if ((Active_buttons & 0x7) == 0x7) {  // All 3 bits set (0b111)
+        clear_shared_view();
+        Paint_mode_active = 0;
+        return;
+    }
+    
     // Button press: enter paint mode and paint current position
     if (btn == 1) {
-        Etchsketch__Begin_batch();
         Paint_mode_active = 1;
-        Paint_color = 0;  // Red
-        Etchsketch__Queue_local_pixel(Position_row, Position_col, Paint_color);
-        ESP_LOGI(TAG, "Button 1 pressed - Paint mode active (RED) at row=%d col=%d", Position_row, Position_col);
+        Paint_color = RED;
+        queue_local_pixel(Position_row, Position_col, Paint_color);
     } else if (btn == 2) {
-        Etchsketch__Begin_batch();
         Paint_mode_active = 1;
-        Paint_color = 1;  // Green
-        Etchsketch__Queue_local_pixel(Position_row, Position_col, Paint_color);
-        ESP_LOGI(TAG, "Button 2 pressed - Paint mode active (GREEN) at row=%d col=%d", Position_row, Position_col);
+        Paint_color = GREEN;
+        queue_local_pixel(Position_row, Position_col, Paint_color);
     } else if (btn == 3) {
-        Etchsketch__Begin_batch();
         Paint_mode_active = 1;
-        Paint_color = 2;  // Blue
-        Etchsketch__Queue_local_pixel(Position_row, Position_col, Paint_color);
-        ESP_LOGI(TAG, "Button 3 pressed - Paint mode active (BLUE) at row=%d col=%d", Position_row, Position_col);
+        Paint_color = BLUE;
+        queue_local_pixel(Position_row, Position_col, Paint_color);
     }
 }
 
 // Button released: exit paint mode
 void Etchsketch__UI_Button_Released(uint8_t btn) {
+    // Clear the button bit
+    if (btn >= 1 && btn <= 3) {
+        Active_buttons &= ~(1 << (btn - 1));
+    }
+    
     // Exit paint mode on any button release
     if (Paint_mode_active) {
-        Etchsketch__End_batch();
-        ESP_LOGI(TAG, "Button %d released - Paint mode inactive", btn);
         Paint_mode_active = 0;
     }
 }
 
-// Inline shared view helpers
-void Etchsketch__Request_full_sync(void) {
+void Etchsketch__Apply_remote_frame(const mqtt_shared_view_frame_t *frame) {
+    if (!frame || !Shared_comm_active) return;
+    Last_seq_seen = frame->seq;
+    
+    if (Initial_full_sync) {
+        // First frame after entering view: replace entirely
+        memcpy(&shared_view, frame, sizeof(shared_view));
+        Initial_full_sync = 0;
+    } else {
+        // Subsequent frames: merge with OR to combine all device changes
+        for (uint8_t row = 0; row < 16; row++) {
+            shared_view.red[row] |= frame->red[row];
+            shared_view.green[row] |= frame->green[row];
+            shared_view.blue[row] |= frame->blue[row];
+        }
+    }
+}
+
+// PRIVATE METHODS
+
+// Publish mqtt message, get full shared view from server
+static void request_full_sync(void) {
+    if (!Shared_comm_active) return;
     uint8_t buffer[MQTT_PROTOCOL_HEADER_SIZE];
     int len = mqtt_protocol_build_shared_view_request(buffer, sizeof(buffer));
     if (len > 0) {
@@ -198,97 +241,50 @@ void Etchsketch__Request_full_sync(void) {
     }
 }
 
-void Etchsketch__Apply_remote_frame(const mqtt_shared_view_frame_t *frame) {
-    if (!frame) return;
-    Last_seq_seen = frame->seq;
-    memcpy(&shared_view, frame, sizeof(shared_view));
+static void clear_shared_view(void) {
+    memset(&shared_view, 0, sizeof(shared_view));
 }
 
-void Etchsketch__Apply_remote_updates(const mqtt_shared_pixel_update_t *updates, uint8_t count, uint16_t seq) {
-    if (!updates || count == 0) return;
-    
-    // Detect seq gap
-    if (seq != Last_seq_seen + 1) {
-        ESP_LOGW(TAG, "Shared view seq gap detected: expected %u, got %u", Last_seq_seen + 1, seq);
-        Etchsketch__Request_full_sync();
-    }
-    Last_seq_seen = seq;
-    
-    for (uint8_t i = 0; i < count; i++) {
-        apply_pixel_local(updates[i].row, updates[i].col, updates[i].color);
-    }
-}
-
-void Etchsketch__Begin_batch(void) { Batch_active = 1; }
-void Etchsketch__End_batch(void) { 
-    Batch_active = 0; 
-    // Don't flush immediately - let the timer handle it
-    // This allows the user to press another button within 2 seconds without sending data
-}
-
-void Etchsketch__Queue_local_pixel(uint8_t row, uint8_t col, uint8_t color) {
+static void queue_local_pixel(uint8_t row, uint8_t col, pixel_color_t color) {
     // Ensure row and col fit in 4 bits (0-15 range)
     if (row >= 16 || col >= 16) {
         ESP_LOGW(TAG, "Invalid pixel coordinates: row=%d, col=%d", row, col);
         return;
     }
     
-    apply_pixel_local(row, col, color);
-
-    // Check if pixel already pending; update color if so
-    uint8_t found_duplicate = 0;
-    for (uint8_t i = 0; i < Pending_count; i++) {
-        if (Pending_updates[i].row == row && Pending_updates[i].col == col) {
-            Pending_updates[i].color = color;
-            found_duplicate = 1;
-            break;
-        }
-    }
-
-    // Add new pending entry if not a duplicate
-    if (!found_duplicate && Pending_count < MAX_PENDING_UPDATES) {
-        Pending_updates[Pending_count].row = row;
-        Pending_updates[Pending_count].col = col;
-        Pending_updates[Pending_count].color = color;
-        Pending_count++;
-        
-        // Flush if buffer is full to make room for more pixels
-        if (Pending_count >= MAX_PENDING_UPDATES) {
-            flush_pending();
-            // Reset timer after flush so inactivity countdown restarts
-            reset_flush_timer();
-        }
-    }
-
-    // Reset the flush timer on each new update
-    // This ensures updates only send after 2 seconds of complete inactivity
-    reset_flush_timer();
-}
-
-// Update display frame locally
-static void apply_pixel_local(uint8_t row, uint8_t col, uint8_t color) {
-    if (row >= 16 || col >= 16) return;
+    // Toggle bit locally
     uint16_t bit = (1 << col);
-    switch (color) {
-        case 0: shared_view.red[row] |= bit; break;
-        case 1: shared_view.green[row] |= bit; break;
-        case 2: shared_view.blue[row] |= bit; break;
-        default: break;
+    uint16_t *row_ptr = NULL;
+    if (color == RED) row_ptr = &shared_view.red[row];
+    else if (color == GREEN) row_ptr = &shared_view.green[row];
+    else if (color == BLUE) row_ptr = &shared_view.blue[row];
+    
+    // Update local pixel state
+    if (row_ptr) {
+        *row_ptr ^= bit;  // toggle the bit
+    }
+    
+    // Start flush timer on any change
+    if (Shared_comm_active) {
+        xTimerReset(flush_timer, 0);
     }
 }
 
-// Send batch of pixel updates to shared view
+// Send full shared view to server
 static void flush_pending(void) {
-    if (Pending_count == 0) return;
-    uint8_t buffer[MQTT_PROTOCOL_HEADER_SIZE + 3 + (MAX_PENDING_UPDATES * 3)];
-    int len = mqtt_protocol_build_shared_view_updates(Pending_updates, Pending_count, Next_seq_to_send, buffer, sizeof(buffer));
-    if (len > 0) {
-        Mqtt__Publish(MQTT_TOPIC_SHARED_VIEW, buffer, len);
-        Next_seq_to_send++;
+    if(!Mqtt__Is_connected()) {
+        Shared_comm_active = 0;
+        return;
     }
-    Pending_count = 0;
+    // Prepare frame with sequence number
+    mqtt_shared_view_frame_t frame_to_send = shared_view;
+    frame_to_send.seq = Next_seq_to_send;
     
-    // Stop the timer since we've flushed
+    // Publish full view
+    Mqtt__Publish(MQTT_TOPIC_SHARED_VIEW, (uint8_t *)&frame_to_send, sizeof(frame_to_send));
+    Next_seq_to_send++;
+    
+    // Stop the flush batching timer since we've sent
     if (flush_timer != NULL) {
         xTimerStop(flush_timer, 0);
     }
@@ -299,14 +295,6 @@ static void flush_timer_callback(TimerHandle_t timer) {
     // Keep timer task lean: just notify worker
     if (flush_sem != NULL) {
         xSemaphoreGive(flush_sem);
-    }
-}
-
-// Reset the flush timer (restarts it from zero)
-static void reset_flush_timer(void) {
-    if (flush_timer != NULL) {
-        // Reset the timer - this stops and restarts it from 0
-        xTimerReset(flush_timer, 0);
     }
 }
 

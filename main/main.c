@@ -318,12 +318,13 @@ static void periodic_task_check_server(void *pvParameters) {
         TickType_t time_start_task = xTaskGetTickCount();
         if(Mqtt__Get_server_status() == 1) {
             Mqtt__Reset_server_status();
+            Mqtt__Set_offline_mode(false);  // Server is responding
             vTaskDelayUntil(&time_start_task, active_server_check_every_ms);
 
         } else {
             // create view for server not communicating
             Weather__Set_view_comm_loss();
-            // also track downtime?
+            Mqtt__Set_offline_mode(true);   // Server is not responding
 
             vTaskDelayUntil(&time_start_task, unresponsive_server_check_every_ms);
         }

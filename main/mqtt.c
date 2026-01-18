@@ -35,6 +35,8 @@
 // PRIVATE VARIABLE
 static uint8_t Previous_weather_message[(3*3) + MQTT_PROTOCOL_HEADER_SIZE]; // Max size for weather 3day forecast + header
 static uint8_t Flag_Active_Server;
+static bool s_offline_mode = false;  // Tracks whether server is unreachable
+static bool s_mqtt_connected = false; // Tracks MQTT connection state
 static char *client_cert_buffer = NULL;  // Dynamically allocated from NVS
 static char *client_key_buffer = NULL;   // Dynamically allocated from NVS
 static char weather_topic_with_zip[24] = {0};  // Static buffer for weather topic with zipcode
@@ -49,7 +51,6 @@ static void process_current_weather(const uint8_t *payload, uint8_t payload_len)
 static void process_forecast_weather(const uint8_t *payload, uint8_t payload_len);
 static void check_and_trigger_ota_update(uint16_t server_version);
 static void process_shared_view_frame(const uint8_t *payload, uint8_t payload_len);
-static void process_shared_view_updates(const uint8_t *payload, uint8_t payload_len);
 
 static const char *TAG = "WEATHER_STATION: MQTT";
 
@@ -68,6 +69,7 @@ static char *ca_cert_buffer = NULL;      // Dynamically allocated from NVS
  */
 static void handle_mqtt_connected(esp_mqtt_client_handle_t client) {
     ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+    s_mqtt_connected = true;
     
     int msg_id;
     // Build weather topic with zipcode from NVS
@@ -141,6 +143,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+        s_mqtt_connected = false;
         break;
     case MQTT_EVENT_SUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
@@ -179,6 +182,7 @@ void Mqtt__Start(void)
 {
     memset(Previous_weather_message, 0, sizeof(Previous_weather_message));
     Flag_Active_Server = 0;
+    s_mqtt_connected = false;
     mqtt_app_start();
 }
 
@@ -198,6 +202,18 @@ uint8_t Mqtt__Get_server_status(void) {
 
 void Mqtt__Reset_server_status(void) {
     Flag_Active_Server = 0;
+}
+
+bool Mqtt__Is_offline(void) {
+    return s_offline_mode;
+}
+
+void Mqtt__Set_offline_mode(bool offline) {
+    s_offline_mode = offline;
+}
+
+bool Mqtt__Is_connected(void) {
+    return s_mqtt_connected;
 }
 
 // Insert timestamp and publish debug message
@@ -398,9 +414,6 @@ static void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
             case MSG_TYPE_SHARED_VIEW_FRAME:
                 process_shared_view_frame(payload, header.length);
                 break;
-            case MSG_TYPE_SHARED_VIEW_UPDATES:
-                process_shared_view_updates(payload, header.length);
-                break;
             default:
                 ESP_LOGW(TAG, "Unknown shared view message type: 0x%02X", header.type);
                 break;
@@ -463,19 +476,6 @@ static void process_shared_view_frame(const uint8_t *payload, uint8_t payload_le
     }
 }
 
-static void process_shared_view_updates(const uint8_t *payload, uint8_t payload_len) {
-    mqtt_shared_pixel_update_t updates[32];
-    uint8_t count = 0;
-    uint16_t seq = 0;
-    if (mqtt_protocol_parse_shared_view_updates(payload, payload_len, updates, 32, &count, &seq) != 0) {
-        ESP_LOGE(TAG, "Failed to parse shared view updates");
-        return;
-    }
-    Etchsketch__Apply_remote_updates(updates, count, seq);
-    if (displayUpdateSemaphore) {
-        xSemaphoreGive(displayUpdateSemaphore);
-    }
-}
 // Process forecast weather message
 static void process_forecast_weather(const uint8_t *payload, uint8_t payload_len) {
     mqtt_forecast_weather_t forecast;
