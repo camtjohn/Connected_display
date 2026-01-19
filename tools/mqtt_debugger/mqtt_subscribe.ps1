@@ -12,8 +12,8 @@ param(
 
 $workspaceRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 if (-not $CAFile)   { $CAFile   = Join-Path $PSScriptRoot "certs\ca.crt" }
-if (-not $CertFile) { $CertFile = Join-Path $PSScriptRoot "certs\device002.crt" }
-if (-not $KeyFile)  { $KeyFile  = Join-Path $PSScriptRoot "certs\device002.key" }
+if (-not $CertFile) { $CertFile = Join-Path $PSScriptRoot "certs\dev99.crt" }
+if (-not $KeyFile)  { $KeyFile  = Join-Path $PSScriptRoot "certs\dev99.key" }
 
 if (-not (Get-Command mosquitto_sub -ErrorAction SilentlyContinue)) {
     Write-Error "mosquitto_sub not found on PATH. Install Mosquitto or add mosquitto_sub to PATH."

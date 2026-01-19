@@ -7,10 +7,8 @@
 extern TaskHandle_t periodicTaskHandle;
 extern uint16_t view_main[16];
 
-//#define DEVICE_NAME                     "dev0"
-
 // Debug build flag - uncomment to use debug topics
-#define DEBUG_BUILD
+// #define DEBUG_BUILD
 
 #define MQTT_BROKER_URL                 "mqtts://jbar.dev:8883"
 

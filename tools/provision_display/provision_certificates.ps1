@@ -73,32 +73,32 @@ if (-not $CaFile -or -not (Test-Path $CaFile)) {
     }
 }
 
-# Auto-detect .crt in certs_to_provision
+# Auto-detect .crt in certs_to_provision (dev##.crt pattern where ## is two digits)
 if (-not $CertFile -or -not (Test-Path $CertFile)) {
-    $crtFiles = Get-ChildItem -Path $certsDir -Filter "device*.crt" -File -ErrorAction SilentlyContinue
+    $crtFiles = Get-ChildItem -Path $certsDir -Filter "dev*.crt" -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^dev\d{2}\.crt$' }
     if ($crtFiles.Count -eq 1) {
         $CertFile = $crtFiles[0].FullName
         Write-Host "Auto-detected certificate file: $CertFile" -ForegroundColor Green
     } elseif ($crtFiles.Count -gt 1) {
-        Write-Host "ERROR: Multiple device*.crt files found. Use -CertFile to specify which one." -ForegroundColor Red
+        Write-Host "ERROR: Multiple dev##.crt files found. Use -CertFile to specify which one." -ForegroundColor Red
         exit 1
     } else {
-        Write-Host "ERROR: No device*.crt file found in certs_to_provision. Use -CertFile to specify." -ForegroundColor Red
+        Write-Host "ERROR: No dev##.crt file found in certs_to_provision. Use -CertFile to specify." -ForegroundColor Red
         exit 1
     }
 }
 
-# Auto-detect .key in certs_to_provision
+# Auto-detect .key in certs_to_provision (dev##.key pattern where ## is two digits)
 if (-not $KeyFile -or -not (Test-Path $KeyFile)) {
-    $keyFiles = Get-ChildItem -Path $certsDir -Filter "device*.key" -File -ErrorAction SilentlyContinue
+    $keyFiles = Get-ChildItem -Path $certsDir -Filter "dev*.key" -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^dev\d{2}\.key$' }
     if ($keyFiles.Count -eq 1) {
         $KeyFile = $keyFiles[0].FullName
         Write-Host "Auto-detected key file: $KeyFile" -ForegroundColor Green
     } elseif ($keyFiles.Count -gt 1) {
-        Write-Host "ERROR: Multiple device*.key files found. Use -KeyFile to specify which one." -ForegroundColor Red
+        Write-Host "ERROR: Multiple dev##.key files found. Use -KeyFile to specify which one." -ForegroundColor Red
         exit 1
     } else {
-        Write-Host "ERROR: No device*.key file found in certs_to_provision. Use -KeyFile to specify." -ForegroundColor Red
+        Write-Host "ERROR: No dev##.key file found in certs_to_provision. Use -KeyFile to specify." -ForegroundColor Red
         exit 1
     }
 }

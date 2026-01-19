@@ -26,8 +26,8 @@ function Stop-WithMessage {
 $workspaceRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 if (-not $SpecPath) { $SpecPath = Join-Path $workspaceRoot "MQTT_MESSAGES.json" }
 if (-not $CAFile)   { $CAFile   = Join-Path $PSScriptRoot "certs\ca.crt" }
-if (-not $CertFile) { $CertFile = Join-Path $PSScriptRoot "certs\device002.crt" }
-if (-not $KeyFile)  { $KeyFile  = Join-Path $PSScriptRoot "certs\device002.key" }
+if (-not $CertFile) { $CertFile = Join-Path $PSScriptRoot "certs\dev99.crt" }
+if (-not $KeyFile)  { $KeyFile  = Join-Path $PSScriptRoot "certs\dev99.key" }
 
 # Check dependencies
 if (-not (Get-Command mosquitto_pub -ErrorAction SilentlyContinue)) {
@@ -62,7 +62,7 @@ $topics = @(
     @{ name = "<device_name>"; msgtypes = @("version"); requires = @("device_name") }
     @{ name = "dev_bootup"; msgtypes = @("device_config"); requires = @("device_name","zipcode") }
     @{ name = "dev_heartbeat"; msgtypes = @("heartbeat"); requires = @("device_name") }
-    @{ name = "shared_view"; msgtypes = @("shared_view_req","shared_view_updates"); requires = @() }
+    @{ name = "shared_view"; msgtypes = @("shared_view_req","shared_view_frame"); requires = @() }
 )
 
 # Display topic list
@@ -183,32 +183,27 @@ switch ($msgKey) {
     "shared_view_req" {
         # No payload
     }
-    "shared_view_updates" {
+    "shared_view_frame" {
+        # Full frame: 98 bytes payload (2 seq + 96 pixel data)
         $seq = [int](Read-Host "Sequence (0-65535)")
         if ($seq -lt 0 -or $seq -gt 65535) { Stop-WithMessage "Seq out of range" }
-        # big-endian
+        # big-endian sequence
         $payload.Add([byte](($seq -band 0xFF00) -shr 8)) | Out-Null
         $payload.Add([byte]($seq -band 0x00FF)) | Out-Null
-        $count = [int](Read-Host "Count of pixel updates")
-        if ($count -lt 0 -or $count -gt 85) { Write-Warning "Large counts may exceed 255 length; continuing" }
-        $payload.Add([byte]$count) | Out-Null
-        for ($i=1; $i -le $count; $i++) {
-            $row = [int](Read-Host "Update ${i}: row (0-15)")
-            $col = [int](Read-Host "Update ${i}: col (0-15)")
-            $colorIn = Read-Host "Update ${i}: color (red|green|blue or 0|1|2)"
-            switch ($colorIn) {
-                "red" { $color = 0 }
-                "0"   { $color = 0 }
-                "green" { $color = 1 }
-                "1" { $color = 1 }
-                "blue" { $color = 2 }
-                "2" { $color = 2 }
-                default { Stop-WithMessage "Invalid color" }
+        
+        Write-Host "Enter 96 bytes of pixel data (32 uint16 values for red, green, blue)"
+        Write-Host "For testing, you can enter all zeros or use a pattern."
+        $useZeros = Read-Host "Fill with zeros? (y/n) [y]"
+        if ([string]::IsNullOrWhiteSpace($useZeros) -or $useZeros -eq "y") {
+            for ($i = 0; $i -lt 96; $i++) {
+                $payload.Add([byte]0) | Out-Null
             }
-            foreach ($v in @($row,$col,$color)) {
-                if ($v -lt 0 -or $v -gt 255) { Stop-WithMessage "Value out of range" }
-                $payload.Add([byte]$v) | Out-Null
-            }
+        } else {
+            Write-Host "Enter 96 hex bytes (e.g. 00 FF 00 ...): " -NoNewline
+            $hexInput = Read-Host
+            $hexBytes = $hexInput -split ' ' | ForEach-Object { [Convert]::ToByte($_, 16) }
+            if ($hexBytes.Count -ne 96) { Stop-WithMessage "Expected 96 bytes, got $($hexBytes.Count)" }
+            $payload.AddRange([byte[]]$hexBytes)
         }
     }
     default { Stop-WithMessage "Unsupported message builder for $msgKey" }

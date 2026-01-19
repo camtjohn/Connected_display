@@ -1,8 +1,8 @@
 key,type,encoding,value
 device_cfg,namespace,,
 ca_cert,file,binary,C:\Personal\Connected_display\tools\provision_display\certs_to_provision\ca.crt
-client_cert,file,binary,C:\Personal\Connected_display\tools\provision_display\certs_to_provision\device002.crt
-client_key,file,binary,C:\Personal\Connected_display\tools\provision_display\certs_to_provision\device002.key
+client_cert,file,binary,C:\Personal\Connected_display\tools\provision_display\certs_to_provision\dev99.crt
+client_key,file,binary,C:\Personal\Connected_display\tools\provision_display\certs_to_provision\dev99.key
 name,data,string,dev02
 zipcode,data,string,60607
 user_name,data,string,testeroo

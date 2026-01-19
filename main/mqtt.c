@@ -373,8 +373,7 @@ static void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
     
     const uint8_t *payload = (uint8_t *)event->data + MQTT_PROTOCOL_HEADER_SIZE;
     
-    // Topic string applies to weather view of this device
-    ESP_LOGI(TAG, "Topic comparison: received='%s' vs expected='%s'", topic_str, weather_topic_with_zip);
+    // Check weather topic
     if(strcmp(topic_str, weather_topic_with_zip) == 0) {
         ESP_LOGI(TAG, "Message on WEATHER_UPDATE topic");
         

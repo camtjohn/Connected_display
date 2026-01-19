@@ -91,6 +91,10 @@ static const char provisioning_html[] = "<!DOCTYPE html>"
 "<input type='password' id='password' name='password' required placeholder='Your WiFi Password'>"
 "</div>"
 "<div class='form-group'>"
+"<label for='zipcode'>Zip code:</label>"
+"<input type='text' id='zipcode' name='zipcode' required pattern='[0-9]{5}' maxlength='5' inputmode='numeric' placeholder='5-digit zip code'>"
+"</div>"
+"<div class='form-group'>"
 "<label for='user_name'>Name the device:</label>"
 "<input type='text' id='user_name' name='user_name' required placeholder='Device name'>"
 "</div>"
@@ -173,6 +177,7 @@ static esp_err_t provisioning_post_handler(httpd_req_t *req) {
     // Parse form data (simple URL-encoded parser)
     char ssid[WIFI_SSID_MAX_LEN] = {0};
     char password[WIFI_PASS_MAX_LEN] = {0};
+    char zipcode[8] = {0};
     char user_name[64] = {0};
     
     // Find ssid parameter
@@ -213,6 +218,25 @@ static esp_err_t provisioning_post_handler(httpd_req_t *req) {
         }
     }
     
+    // Find zipcode parameter
+    char *zip_start = strstr(buf, "zipcode=");
+    if (zip_start) {
+        zip_start += 8;  // Skip "zipcode="
+        char *zip_end = strchr(zip_start, '&');
+        if (!zip_end) zip_end = strchr(zip_start, '\0');
+        
+        int zip_len = zip_end - zip_start;
+        if (zip_len > 0 && zip_len < (int)sizeof(zipcode)) {
+            strncpy(zipcode, zip_start, zip_len);
+            zipcode[zip_len] = '\0';
+            
+            // URL decode simple case (spaces as +)
+            for (int i = 0; zipcode[i]; i++) {
+                if (zipcode[i] == '+') zipcode[i] = ' ';
+            }
+        }
+    }
+
     // Find user_name parameter
     char *name_start = strstr(buf, "user_name=");
     if (name_start) {
@@ -221,7 +245,7 @@ static esp_err_t provisioning_post_handler(httpd_req_t *req) {
         if (!name_end) name_end = strchr(name_start, '\0');
         
         int name_len = name_end - name_start;
-        if (name_len > 0 && name_len < sizeof(user_name)) {
+        if (name_len > 0 && name_len < (int)sizeof(user_name)) {
             strncpy(user_name, name_start, name_len);
             user_name[name_len] = '\0';
             
@@ -245,6 +269,12 @@ static esp_err_t provisioning_post_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
     
+    if (strlen(zipcode) == 0) {
+        ESP_LOGE(TAG, "Zip code is empty");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Zip code cannot be empty");
+        return ESP_FAIL;
+    }
+    
     if (strlen(user_name) == 0) {
         ESP_LOGE(TAG, "Device name is empty");
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Device name cannot be empty");
@@ -255,6 +285,7 @@ static esp_err_t provisioning_post_handler(httpd_req_t *req) {
     ESP_LOGI(TAG, "Saving WiFi credentials - SSID: %s", ssid);
     Device_Config__Set_WiFi_SSID(ssid);
     Device_Config__Set_WiFi_Password(password);
+    Device_Config__Set_Zipcode(zipcode);
     Device_Config__Set_UserName(user_name);
     ESP_LOGI(TAG, "Device name set to: %s", user_name);
     

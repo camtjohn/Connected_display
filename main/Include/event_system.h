@@ -5,6 +5,7 @@
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 #include "freertos/timers.h"
+#include "freertos/event_groups.h"
 
 // Event System Types
 typedef enum {

@@ -64,25 +64,25 @@ def main():
         args.ca = os.path.join(certs_dir, 'ca.crt')
     
     if not args.cert:
-        cert_files = [f for f in os.listdir(certs_dir) if f.startswith('device') and f.endswith('.crt')]
+        cert_files = [f for f in os.listdir(certs_dir) if f.startswith('dev') and f[3:5].isdigit() and f.endswith('.crt')]
         if len(cert_files) == 1:
             args.cert = os.path.join(certs_dir, cert_files[0])
         elif len(cert_files) > 1:
-            print(f"ERROR: Multiple device*.crt files found. Use --cert to specify which one.")
+            print(f"ERROR: Multiple dev##.crt files found. Use --cert to specify which one.")
             return 1
         else:
-            print(f"ERROR: No device*.crt file found in {certs_dir}. Use --cert to specify.")
+            print(f"ERROR: No dev##.crt file found in {certs_dir}. Use --cert to specify.")
             return 1
     
     if not args.key:
-        key_files = [f for f in os.listdir(certs_dir) if f.startswith('device') and f.endswith('.key')]
+        key_files = [f for f in os.listdir(certs_dir) if f.startswith('dev') and f[3:5].isdigit() and f.endswith('.key')]
         if len(key_files) == 1:
             args.key = os.path.join(certs_dir, key_files[0])
         elif len(key_files) > 1:
-            print(f"ERROR: Multiple device*.key files found. Use --key to specify which one.")
+            print(f"ERROR: Multiple dev##.key files found. Use --key to specify which one.")
             return 1
         else:
-            print(f"ERROR: No device*.key file found in {certs_dir}. Use --key to specify.")
+            print(f"ERROR: No dev##.key file found in {certs_dir}. Use --key to specify.")
             return 1
     
     # Check if files exist
