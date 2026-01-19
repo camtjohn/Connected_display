@@ -12,6 +12,7 @@ static const char *TAG = "PROVISIONING_VIEW";
 
 // State
 static uint8_t has_credentials = 0;  // 0 = no credentials, 1 = has credentials but failed
+static uint8_t user_action_taken = 0;  // 1 when user presses button to exit provisioning view
 
 // Simple "PROV" text pattern for 4x4 LED matrix
 // Displays as a pulsing indicator that device is in provisioning mode
@@ -51,11 +52,17 @@ void Provisioning_View__Get_frame(view_frame_t *frame) {
 
 void Provisioning_View__Set_context(uint8_t context) {
     has_credentials = context;
+    user_action_taken = 0;  // Reset action flag
+}
+
+int Provisioning_View__Get_user_action(void) {
+    return user_action_taken;
 }
 
 void Provisioning_View__UI_Button(uint8_t btn) {
     if (btn == 1) {  // Button 2 (btn 1 after first button handled by view.c) - Start provisioning
         ESP_LOGI(TAG, "Starting WiFi provisioning");
+        user_action_taken = 1;  // Set flag
         
         if (Provisioning__Start() == 0) {
             ESP_LOGI(TAG, "Provisioning completed successfully - rebooting");
@@ -68,6 +75,7 @@ void Provisioning_View__UI_Button(uint8_t btn) {
         }
     } else if (btn == 3) {  // Button 4 - Continue offline
         ESP_LOGI(TAG, "User chose to continue offline");
+        user_action_taken = 1;  // Set flag
         // Return to menu view
         View__Set_view(VIEW_MENU);
     }

@@ -41,4 +41,10 @@ void Provisioning_View__UI_Encoder_Side(uint8_t direction);
  */
 void Provisioning_View__Set_context(uint8_t has_credentials);
 
+/**
+ * @brief Check if user has taken an action (pressed button) in provisioning view
+ * @return 1 if user pressed button, 0 otherwise
+ */
+int Provisioning_View__Get_user_action(void);
+
 #endif // PROVISIONING_VIEW_H

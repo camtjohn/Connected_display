@@ -112,7 +112,8 @@ void View__Process_UI(uint16_t UI_event) {
     }
     
     // First button: switch between menu and a module view (button DOWN only)
-    if((UI_event & 0x01) && !is_button_up) {
+    // Exception: provisioning view uses btn0 for its own handler
+    if((UI_event & 0x01) && !is_button_up && View_current_view != VIEW_PROVISIONING) {
         if (View_current_view == VIEW_MENU) {
             View_current_view = Menu__Get_current_view();
             build_new_view();
@@ -126,6 +127,7 @@ void View__Process_UI(uint16_t UI_event) {
             build_new_view();
             Led_driver__Update_RAM(&View_frame);  // immediate refresh on view change
         }
+        return;  // Return early to prevent view-specific handlers from running
     }
 
     switch(View_current_view) {
@@ -241,13 +243,10 @@ void View__Process_UI(uint16_t UI_event) {
         break;
     case VIEW_PROVISIONING:
         // Buttons
-        if(UI_event & 0x02) {   //btn2
+        if(UI_event & 0x01) {   //btn0 - Start SoftAP
             Provisioning_View__UI_Button(1);
         }
-        if(UI_event & 0x04) {   //btn3
-            Provisioning_View__UI_Button(2);
-        }
-        if(UI_event & 0x08) {   //btn4
+        if(UI_event & 0x08) {   //btn3 - Continue offline
             Provisioning_View__UI_Button(3);
         }
         //enc1

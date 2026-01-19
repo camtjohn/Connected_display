@@ -2,7 +2,7 @@
 #define MAIN_H
 
 // Firmware version compiled into this binary
-#define FW_VERSION_NUM 13
+#define FW_VERSION_NUM 1
 
 
 #include "freertos/FreeRTOS.h"

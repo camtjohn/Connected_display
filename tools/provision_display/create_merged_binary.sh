@@ -13,8 +13,8 @@ OUTPUT_FILE="${OUTPUT_FILE:-$BUILD_DIR/weather_display_merged.bin}"
 
 # Certificate files (for generating NVS binary)
 CA_FILE="${CA_FILE:-$TOOLS_DIR/certs_to_provision/ca.crt}"
-CERT_FILE="${CERT_FILE:-$TOOLS_DIR/certs_to_provision/device002.crt}"
-KEY_FILE="${KEY_FILE:-$TOOLS_DIR/certs_to_provision/device002.key}"
+CERT_FILE="${CERT_FILE:-}"
+KEY_FILE="${KEY_FILE:-}"
 
 # Default config values
 DEVICE_NAME=""
@@ -113,6 +113,39 @@ echo "========================================"
 echo "ESP32 Merged Binary Creator"
 echo "========================================"
 echo ""
+
+# Auto-detect device certificate files if not provided
+if [ -z "$CERT_FILE" ] || [ -z "$KEY_FILE" ]; then
+    echo "Auto-detecting device certificates in $TOOLS_DIR/certs_to_provision/..."
+    
+    # Find all devXX.crt files
+    CERT_FILES=($(ls "$TOOLS_DIR/certs_to_provision"/dev[0-9][0-9].crt 2>/dev/null))
+    
+    if [ ${#CERT_FILES[@]} -eq 0 ]; then
+        echo "ERROR: No device certificate files found matching pattern 'devXX.crt'"
+        echo "       in directory: $TOOLS_DIR/certs_to_provision/"
+        echo ""
+        echo "Please ensure you have certificate files named like: dev00.crt, dev01.crt, etc."
+        exit 1
+    elif [ ${#CERT_FILES[@]} -gt 1 ]; then
+        echo "ERROR: Multiple device certificate files found:"
+        for cert in "${CERT_FILES[@]}"; do
+            echo "       - $(basename $cert)"
+        done
+        echo ""
+        echo "Please specify which certificate to use with --cert option"
+        exit 1
+    fi
+    
+    # Found exactly one certificate
+    CERT_FILE="${CERT_FILES[0]}"
+    CERT_BASENAME=$(basename "$CERT_FILE" .crt)
+    KEY_FILE="$TOOLS_DIR/certs_to_provision/${CERT_BASENAME}.key"
+    
+    echo "  Found certificate: $(basename $CERT_FILE)"
+    echo "  Expected key file: $(basename $KEY_FILE)"
+    echo ""
+fi
 
 # Function to check if file exists
 check_file() {

@@ -72,10 +72,11 @@ void app_main(void) {
     
     Ui__Initialize();
 
+    // Start event system tasks BEFORE WiFi so button events are processed during WiFi wait
+    EventSystem_StartTasks();
+
     // Start up WiFi (connect, register IP handler, and IP check)
     startup_wifi();
-    
-    EventSystem_StartTasks();
 
     // Start event listener task to handle provisioning button
     xTaskCreate(
@@ -200,12 +201,20 @@ static void handle_wifi_connection_failure(void) {
         ESP_LOGW(TAG, "=================================");
         
         // Allow user to provision or continue offline (timeout after 60 seconds)
+        // Clear any stale events that were queued before event dispatcher started
+        EventSystem_ClearQueue();
+        
         View__Set_view(VIEW_PROVISIONING);
         Provisioning_View__Set_context(0);  // No credentials
         
         // Wait for user action or timeout (handled by view system now)
         for (int i = 0; i < 600; i++) {  // 600 x 100ms = 60 seconds
             vTaskDelay(pdMS_TO_TICKS(100));
+            // Break early if user takes action
+            if (Provisioning_View__Get_user_action()) {
+                ESP_LOGI(TAG, "User action detected, exiting provisioning timeout");
+                break;
+            }
         }
         
         ESP_LOGI(TAG, "Continuing in offline mode (timeout reached or button pressed)");

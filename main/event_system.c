@@ -11,12 +11,23 @@ QueueHandle_t systemEventQueue = NULL;
 // Task handle for event dispatcher
 static TaskHandle_t eventDispatcherTaskHandle = NULL;
 
+// Event group to signal when event dispatcher is ready
+static EventGroupHandle_t eventDispatcherReadyGroup = NULL;
+#define EVENT_DISPATCHER_READY_BIT BIT0
+
 // Initialize the event system
 void EventSystem_Initialize(void) {
     // Create event queue
     systemEventQueue = xQueueCreate(EVENT_QUEUE_SIZE, sizeof(system_event_t));
     if (systemEventQueue == NULL) {
         ESP_LOGE(TAG, "Failed to create system event queue");
+        return;
+    }
+    
+    // Create event group for dispatcher readiness
+    eventDispatcherReadyGroup = xEventGroupCreate();
+    if (eventDispatcherReadyGroup == NULL) {
+        ESP_LOGE(TAG, "Failed to create event dispatcher ready group");
         return;
     }
 
@@ -35,6 +46,31 @@ void EventSystem_StartTasks(void) {
         12,                             // Task priority (high)
         &eventDispatcherTaskHandle      // Task handle
     );
+    
+    // Wait for event dispatcher to signal it's ready (max 1 second)
+    EventBits_t bits = xEventGroupWaitBits(
+        eventDispatcherReadyGroup,
+        EVENT_DISPATCHER_READY_BIT,
+        pdFALSE,
+        pdFALSE,
+        pdMS_TO_TICKS(1000)
+    );
+    
+    if (bits & EVENT_DISPATCHER_READY_BIT) {
+        ESP_LOGI(TAG, "Event dispatcher task is ready");
+    } else {
+        ESP_LOGW(TAG, "Event dispatcher task did not signal ready within 1 second");
+    }
+}
+
+// Clear all pending events from the queue
+void EventSystem_ClearQueue(void) {
+    system_event_t event;
+    // Drain the queue of all pending events
+    while (xQueueReceive(systemEventQueue, &event, 0) == pdTRUE) {
+        // Just discard events
+    }
+    ESP_LOGI(TAG, "Event queue cleared");
 }
 
 // Central event dispatcher task - processes all system events
@@ -42,6 +78,9 @@ void event_dispatcher_task(void *pvParameters) {
     system_event_t event;
     
     ESP_LOGI(TAG, "Event dispatcher task started");
+    
+    // Signal that dispatcher is ready
+    xEventGroupSetBits(eventDispatcherReadyGroup, EVENT_DISPATCHER_READY_BIT);
     
     while (1) {
         // Wait for events from the queue

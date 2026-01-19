@@ -36,6 +36,7 @@ extern QueueHandle_t systemEventQueue;
 void EventSystem_Initialize(void);
 void EventSystem_PostEvent(event_type_t type, uint32_t data, void* payload);
 void EventSystem_StartTasks(void);
+void EventSystem_ClearQueue(void);
 
 // Task functions (can be called by main if needed)
 void event_dispatcher_task(void *pvParameters);

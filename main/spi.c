@@ -1,6 +1,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -42,30 +43,44 @@ spi_device_handle_t Spi__Init(uint8_t data_pin, uint8_t clk_pin, uint8_t mode, u
 }
 
 void Spi__Write(spi_device_handle_t spi_handle, uint8_t* buffer, uint16_t num_bits_data) {
-    spi_transaction_t trans_desc;
-    memset(&trans_desc, 0, sizeof(trans_desc));
-
-    //flip bytes in buffer: first byte->last byte, 2nd byte->2nd to last byte...
-    uint8_t num_bytes = num_bits_data / 8;
-    uint8_t leftover_bits = num_bits_data % 8;
-    if(leftover_bits > 0) {
-        num_bytes ++;
-    }
-    uint8_t new_buffer[num_bytes];
-    for(uint8_t i_byte = 0; i_byte < num_bytes; i_byte++) {
-        uint8_t buf_idx = (num_bytes - 1) - i_byte;
-        new_buffer[i_byte] = buffer[buf_idx];
+    static SemaphoreHandle_t spi_mutex = NULL;
+    
+    // Create mutex on first call
+    if (spi_mutex == NULL) {
+        spi_mutex = xSemaphoreCreateMutex();
     }
     
-    // Configure the transaction_structure
-    trans_desc.length = num_bits_data;                                   // Length of (address + data) is 16 bits
-    trans_desc.tx_buffer = new_buffer;
+    // Take mutex to ensure only one transaction at a time
+    if (xSemaphoreTake(spi_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        spi_transaction_t trans_desc;
+        memset(&trans_desc, 0, sizeof(trans_desc));
 
-    // Use queued transmit to block until the bus is free instead of erroring when a prior polling transaction is in-flight.
-    ret = spi_device_transmit(spi_handle, &trans_desc);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG_SPI, "SPI operation failed\n");
+        //flip bytes in buffer: first byte->last byte, 2nd byte->2nd to last byte...
+        uint8_t num_bytes = num_bits_data / 8;
+        uint8_t leftover_bits = num_bits_data % 8;
+        if(leftover_bits > 0) {
+            num_bytes ++;
+        }
+        uint8_t new_buffer[num_bytes];
+        for(uint8_t i_byte = 0; i_byte < num_bytes; i_byte++) {
+            uint8_t buf_idx = (num_bytes - 1) - i_byte;
+            new_buffer[i_byte] = buffer[buf_idx];
+        }
+        
+        // Configure the transaction_structure
+        trans_desc.length = num_bits_data;                                   // Length of (address + data) is 16 bits
+        trans_desc.tx_buffer = new_buffer;
+
+        // Use queued transmit to block until the bus is free instead of erroring when a prior polling transaction is in-flight.
+        ret = spi_device_transmit(spi_handle, &trans_desc);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG_SPI, "SPI operation failed\n");
+        }
+        
+        xSemaphoreGive(spi_mutex);
+    } else {
+        ESP_LOGE(TAG_SPI, "Failed to acquire SPI mutex\n");
     }
 }
 
