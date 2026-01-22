@@ -47,4 +47,10 @@ void Provisioning_View__Set_context(uint8_t has_credentials);
  */
 int Provisioning_View__Get_user_action(void);
 
+/**
+ * @brief Check if currently in SoftAP mode (waiting for provisioning)
+ * @return 1 if in SoftAP mode, 0 otherwise
+ */
+int Provisioning_View__Is_in_softap_mode(void);
+
 #endif // PROVISIONING_VIEW_H

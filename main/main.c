@@ -217,6 +217,20 @@ static void handle_wifi_connection_failure(void) {
             }
         }
         
+        // Check if user entered SoftAP mode
+        if (Provisioning_View__Is_in_softap_mode()) {
+            ESP_LOGI(TAG, "Entering SoftAP provisioning mode");
+            
+            // Start provisioning (non-blocking - runs web server in background)
+            if (Provisioning__Start() == 0) {
+                ESP_LOGI(TAG, "Provisioning completed successfully - rebooting");
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                esp_restart();
+            } else {
+                ESP_LOGE(TAG, "Provisioning failed or was cancelled");
+            }
+        }
+        
         ESP_LOGI(TAG, "Continuing in offline mode (timeout reached or button pressed)");
         View__Set_view(VIEW_MENU);  // Return to menu
         return;  // Exit without starting retry task (no credentials to retry with)
@@ -237,6 +251,25 @@ static void handle_wifi_connection_failure(void) {
     // Wait for user action or timeout (handled by view system now)
     for (int i = 0; i < 300; i++) {  // 300 x 100ms = 30 seconds
         vTaskDelay(pdMS_TO_TICKS(100));
+        // Break early if user takes action
+        if (Provisioning_View__Get_user_action()) {
+            ESP_LOGI(TAG, "User action detected");
+            break;
+        }
+    }
+    
+    // Check if user entered SoftAP mode
+    if (Provisioning_View__Is_in_softap_mode()) {
+        ESP_LOGI(TAG, "Entering SoftAP provisioning mode");
+        
+        // Start provisioning (non-blocking - runs web server in background)
+        if (Provisioning__Start() == 0) {
+            ESP_LOGI(TAG, "Provisioning completed successfully - rebooting");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            esp_restart();
+        } else {
+            ESP_LOGE(TAG, "Provisioning failed or was cancelled");
+        }
     }
     
     // Continuing without WiFi but with credentials - start background retry task
