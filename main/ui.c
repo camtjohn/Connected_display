@@ -201,30 +201,47 @@ void Ui__Initialize(void) {
 // Poll PCNT counters and post events when movement detected
 static void encoder_poll_task(void *arg) {
     int prev_count1 = 0, prev_count2 = 0;
+    int accum1 = 0, accum2 = 0;  // Accumulate counts to detect 4-count boundaries
     
     while (1) {
         int count1 = 0, count2 = 0;
         pcnt_unit_get_count(pcnt_unit_enc1, &count1);
         pcnt_unit_get_count(pcnt_unit_enc2, &count2);
         
-        // Encoder 1: trigger on every 4 counts (one detent)
+        // Encoder 1: accumulate counts and post event at 4-count boundaries
         int delta1 = count1 - prev_count1;
-        if (delta1 >= 4) {
-            EventSystem_PostEvent(EVENT_UI_ENCODER, 0x10, NULL);  // CCW
-            prev_count1 = count1;
-        } else if (delta1 <= -4) {
-            EventSystem_PostEvent(EVENT_UI_ENCODER, 0x20, NULL);  // CW
-            prev_count1 = count1;
+        prev_count1 = count1;  // Always update baseline
+        
+        if (delta1 > 0) {
+            accum1 += delta1;
+            if (accum1 >= 4) {
+                EventSystem_PostEvent(EVENT_UI_ENCODER, 0x10, NULL);  // CCW
+                accum1 -= 4;
+            }
+        } else if (delta1 < 0) {
+            accum1 += delta1;  // Subtracts (adds negative)
+            if (accum1 <= -4) {
+                EventSystem_PostEvent(EVENT_UI_ENCODER, 0x20, NULL);  // CW
+                accum1 += 4;
+            }
         }
         
-        // Encoder 2
+        // Encoder 2: same logic
         int delta2 = count2 - prev_count2;
-        if (delta2 >= 4) {
-            EventSystem_PostEvent(EVENT_UI_ENCODER, 0x40, NULL);  // CCW
-            prev_count2 = count2;
-        } else if (delta2 <= -4) {
-            EventSystem_PostEvent(EVENT_UI_ENCODER, 0x80, NULL);  // CW
-            prev_count2 = count2;
+        prev_count2 = count2;  // Always update baseline
+        
+        if (delta2 > 0) {
+            accum2 += delta2;
+            if (accum2 >= 4) {
+                EventSystem_PostEvent(EVENT_UI_ENCODER, 0x40, NULL);  // CCW
+                accum2 -= 4;
+            }
+        } else if (delta2 < 0) {
+            accum2 += delta2;  // Subtracts
+            if (accum2 <= -4) {
+                EventSystem_PostEvent(EVENT_UI_ENCODER, 0x80, NULL);  // CW
+                accum2 += 4;
+            }
         }
         
         vTaskDelay(pdMS_TO_TICKS(10));  // Poll every 10ms
