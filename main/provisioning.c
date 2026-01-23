@@ -22,8 +22,8 @@
 
 static const char *TAG = "PROVISIONING";
 
-#define SOFTAP_SSID "Connected_Display"
-#define SOFTAP_PASS "setup1234"  // Required for WPA2
+#define SOFTAP_SSID "Lite"
+#define SOFTAP_PASS ""  // Empty password for open network
 #define SOFTAP_CHANNEL 6
 #define SOFTAP_MAX_CONNECTIONS 4
 
@@ -608,7 +608,7 @@ static esp_err_t start_softap(void) {
             .password = SOFTAP_PASS,
             .channel = SOFTAP_CHANNEL,
             .max_connection = SOFTAP_MAX_CONNECTIONS,
-            .authmode = WIFI_AUTH_WPA2_PSK,
+            .authmode = WIFI_AUTH_OPEN,
         },
     };
     
