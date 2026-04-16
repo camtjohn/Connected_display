@@ -117,7 +117,12 @@ void Ui__Initialize(void) {
     
     // === Encoder 2 (GPIO 3=A, GPIO 4=B) ===
     ESP_ERROR_CHECK(pcnt_new_unit(&unit_config, &pcnt_unit_enc2));
-    ESP_ERROR_CHECK(pcnt_unit_set_glitch_filter(pcnt_unit_enc2, &filter_config));
+    
+    // Use longer glitch filter for Encoder 2 if it's choppy
+    pcnt_glitch_filter_config_t filter_config_enc2 = {
+        .max_glitch_ns = 5000,  // 5us filter (vs 1us for Encoder 1)
+    };
+    ESP_ERROR_CHECK(pcnt_unit_set_glitch_filter(pcnt_unit_enc2, &filter_config_enc2));
     
     pcnt_chan_config_t chan2_a_config = {
         .edge_gpio_num = ENC_2_A,
@@ -226,7 +231,7 @@ static void encoder_poll_task(void *arg) {
             }
         }
         
-        // Encoder 2: same logic
+        // Encoder 2: same logic (longer glitch filter in hardware config to handle noise)
         int delta2 = count2 - prev_count2;
         prev_count2 = count2;  // Always update baseline
         

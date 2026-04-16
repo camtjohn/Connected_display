@@ -7,10 +7,10 @@ The Etchsketch Shared View is a collaborative drawing canvas (16×16 pixels, 3 c
 ## MQTT Topics
 
 ### Debug Build
-- `debug_shared_view` — shared drawing canvas topic
+- `debug_etch_sketch` — shared drawing canvas topic
 
 ### Production Build
-- `shared_view` — shared drawing canvas topic
+- `etch_sketch` — shared drawing canvas topic
 
 All devices publish and subscribe to the same topic.
 
@@ -21,7 +21,7 @@ All messages use a 2-byte binary header:
 - **Byte 1**: Payload length (0–255 bytes)
 - **Bytes 2+**: Payload (variable)
 
-### MSG_TYPE_SHARED_VIEW_REQ (0x20)
+### MSG_TYPE_ETCH_GET_FRAME (0x20)
 **Device → Server**: Request for full canvas state.
 
 | Offset | Field | Type | Notes |
@@ -33,10 +33,10 @@ All messages use a 2-byte binary header:
 
 ---
 
-### MSG_TYPE_SHARED_VIEW_FRAME (0x21)
+### MSG_TYPE_ETCH_UPDATE_FRAME (0x21)
 **Server → Devices**: Full canvas state (16×16 for each color channel).
 
-**Publish with `retain=1` on `shared_view` topic.**
+**Publish with `retain=1` on `etch_sketch` topic.**
 
 | Offset | Field | Type | Notes |
 |--------|-------|------|-------|
@@ -132,13 +132,13 @@ All messages use a 2-byte binary header:
 **Why retained**: New devices (or devices that reconnect) receive the latest canvas state immediately from the broker without a synchronous request-response.
 
 **Implementation**:
-- Server publishes the full frame with `retain=1` on `shared_view` topic after each update.
+- Server publishes the full frame with `retain=1` on `etch_sketch` topic after each update.
 - Broker stores this single retained message.
 - New subscribers receive it automatically.
-- To force a refresh, a device can publish a `MSG_TYPE_SHARED_VIEW_REQ` and the server republishes the current retained frame.
+- To force a refresh, a device can publish a `MSG_TYPE_ETCH_GET_FRAME` and the server republishes the current retained frame.
 
 **Multi-device sync**:
-- All devices share the same `shared_view` topic.
+- All devices share the same `etch_sketch` topic.
 - Retained frame is overwritten on each server update, so it always reflects the latest state.
 - Devices entering the view call `Etchsketch__On_Enter()` → `Etchsketch__Shared_Request_full_sync()` to ensure they have the current state.
 
@@ -179,7 +179,7 @@ All messages use a 2-byte binary header:
 
 ### Device C Joins / Reconnects
 
-1. Device C subscribes to `shared_view`.
+1. Device C subscribes to `etch_sketch`.
 2. Broker delivers retained full frame (latest from server, e.g., `seq = 42`).
 3. Device C applies full frame locally; sets `last_seq_seen = 42`.
 4. Device C calls `Etchsketch__On_Enter()` (on view switch), which calls `Etchsketch__Shared_Request_full_sync()`.

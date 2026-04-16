@@ -7,9 +7,6 @@
 extern TaskHandle_t periodicTaskHandle;
 extern uint16_t view_main[16];
 
-// Debug build flag - uncomment to use debug topics
-// #define DEBUG_BUILD
-
 #define MQTT_BROKER_URL                 "mqtts://jbar.dev:8883"
 
 #ifdef DEBUG_BUILD
@@ -20,7 +17,7 @@ extern uint16_t view_main[16];
     #define MQTT_TOPIC_HEARTBEAT            "debug_dev_heartbeat"
     #define MQTT_TOPIC_OFFLINE              "debug_device_offline"
     #define MQTT_TOPIC_TEST                 "debug_test_msg"
-    #define MQTT_TOPIC_SHARED_VIEW          "debug_shared_view" // Added shared view topic for debug
+    #define MQTT_TOPIC_ETCH_SKETCH          "debug_etch_sketch"
 #else
     // Production topics (zipcode appended at runtime)
     #define MQTT_TOPIC_WEATHER_BASE         "weather"
@@ -28,7 +25,7 @@ extern uint16_t view_main[16];
     #define MQTT_TOPIC_BOOTUP               "dev_bootup"
     #define MQTT_TOPIC_HEARTBEAT            "dev_heartbeat"
     #define MQTT_TOPIC_OFFLINE              "device_offline"
-    #define MQTT_TOPIC_SHARED_VIEW          "shared_view" // Added shared view topic for production
+    #define MQTT_TOPIC_ETCH_SKETCH          "etch_sketch"
 #endif
 
 // This client publishes to these topics (notify/update server)

@@ -16,6 +16,8 @@ def main():
     parser.add_argument('--ca', help='Path to CA certificate file (default: certs_to_provision/ca.crt)')
     parser.add_argument('--cert', help='Path to client certificate file (default: certs_to_provision/device*.crt)')
     parser.add_argument('--key', help='Path to client key file (default: certs_to_provision/device*.key)')
+    parser.add_argument('--ssid', help='WiFi SSID (optional)', default='')
+    parser.add_argument('--password', help='WiFi Password (optional)', default='')
     parser.add_argument('--device-name', help='Device name (8 chars max, optional)', default='')
     parser.add_argument('--zipcode', help='Zipcode (8 chars max, optional)', default='')
     parser.add_argument('--user-name', help='User name (16 chars max, optional)', default='')
@@ -117,6 +119,8 @@ def main():
     
     # Debug: Show what will be written
     print(f"\nNVS Configuration to write:")
+    print(f"  ssid: '{args.ssid}' (len={len(args.ssid)})")
+    print(f"  password: '{args.password}' (len={len(args.password)})")
     print(f"  device_name: '{args.device_name}' (len={len(args.device_name)})")
     print(f"  zipcode: '{args.zipcode}' (len={len(args.zipcode)})")
     print(f"  user_name: '{args.user_name}' (len={len(args.user_name)})")
@@ -137,6 +141,12 @@ def main():
         f.write(f'ca_cert,file,binary,{ca_path}\n')
         f.write(f'client_cert,file,binary,{cert_path}\n')
         f.write(f'client_key,file,binary,{key_path}\n')
+        
+        if args.ssid:
+            f.write(f'wifi_ssid,data,string,{args.ssid}\n')
+        
+        if args.password:
+            f.write(f'wifi_password,data,string,{args.password}\n')
         
         if args.device_name:
             f.write(f'name,data,string,{args.device_name}\n')

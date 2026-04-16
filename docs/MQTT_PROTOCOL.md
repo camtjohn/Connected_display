@@ -75,15 +75,15 @@ Complete refactoring to handle binary messages:
 
 ### Shared View Protocol
 
-Collaborative drawing uses three message types on the `shared_view` topic:
+Collaborative drawing uses three message types on the `etch_sketch` topic:
 
-#### 0x20 - Shared View Request (header only)
+#### 0x20 - Etch Get Frame (header only)
 ```
 [0x20][0x00]
 ```
 - No payload. Requests a full frame from the publisher.
 
-#### 0x21 - Shared View Frame (payload: 2 + 16*2*3 bytes)
+#### 0x21 - Etch Update Frame (payload: 2 + 16*2*3 bytes)
 ```
 [0x21][len]
   [seq_hi][seq_lo]
@@ -135,7 +135,7 @@ When testing, the MQTT broker should send messages in this format:
 - **Bootup**: Device publishes `"dev0,49085"` to `dev/bootup` on connection
 
 For shared view testing:
-- **Topic**: `shared_view`
+- **Topic**: `etch_sketch`
 - **Payloads**: Use `0x21` for full frames and `0x22` for pixel updates, ensuring `seq` increments by 1 for each message.
 - **Sync**: To simulate a gap, skip a `seq` value; the device will request a full frame with `0x20`.
 

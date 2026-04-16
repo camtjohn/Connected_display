@@ -133,8 +133,8 @@ static void startup_wifi(void) {
         }
     }
     
-    // WiFi startup complete - switch from bootup view to menu
-    View__Set_view(VIEW_MENU);
+    // WiFi startup complete - switch from bootup view to weather
+    View__Set_view(VIEW_WEATHER);
 }
 
 // Start services that require network connectivity (idempotent)
@@ -232,7 +232,7 @@ static void handle_wifi_connection_failure(void) {
         }
         
         ESP_LOGI(TAG, "Continuing in offline mode (timeout reached or button pressed)");
-        View__Set_view(VIEW_MENU);  // Return to menu
+        View__Set_view(VIEW_WEATHER);  // Return to weather view
         return;  // Exit without starting retry task (no credentials to retry with)
     }
     

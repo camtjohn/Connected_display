@@ -50,7 +50,7 @@ static void incoming_mqtt_handler(esp_mqtt_event_handle_t);
 static void process_current_weather(const uint8_t *payload, uint8_t payload_len);
 static void process_forecast_weather(const uint8_t *payload, uint8_t payload_len);
 static void check_and_trigger_ota_update(uint16_t server_version);
-static void process_shared_view_frame(const uint8_t *payload, uint8_t payload_len);
+static void process_etch_update_frame(const uint8_t *payload, uint8_t payload_len);
 
 static const char *TAG = "WEATHER_STATION: MQTT";
 
@@ -116,8 +116,8 @@ static void handle_mqtt_connected(esp_mqtt_client_handle_t client) {
         ESP_LOGE(TAG, "Failed to read device config from NVS");
     }
 
-    // Shared view
-    esp_mqtt_client_subscribe(client, MQTT_TOPIC_SHARED_VIEW, 0);
+    // Etch-a-Sketch shared canvas
+    esp_mqtt_client_subscribe(client, MQTT_TOPIC_ETCH_SKETCH, 0);
 
     ESP_LOGI(TAG, "Subscribed successful, msg_id=%d", msg_id);
 }
@@ -407,14 +407,25 @@ static void incoming_mqtt_handler(esp_mqtt_event_handle_t event) {
             }
         }
     }
-    else if(strcmp(topic_str, MQTT_TOPIC_SHARED_VIEW) == 0) {
-        ESP_LOGI(TAG, "Message on SHARED_VIEW topic");
+    else if(strcmp(topic_str, MQTT_TOPIC_ETCH_SKETCH) == 0) {
+        ESP_LOGI(TAG, "Message on ETCH_SKETCH topic");
         switch (header.type) {
-            case MSG_TYPE_SHARED_VIEW_FRAME:
-                process_shared_view_frame(payload, header.length);
+            case MSG_TYPE_GENERIC:
+                // Some brokers/publishers may send a generic/ping message on etch_sketch.
+                // Ignore silently to avoid warning noise.
+                ESP_LOGD(TAG, "Etch-a-Sketch generic/ping message (0x00) ignored");
+                break;
+            case MSG_TYPE_ETCH_GET_FRAME:
+                // We subscribe to etch_sketch and may receive our own request messages (0x20)
+                // or requests from other clients. The server is responsible for responding
+                // with a full frame; the device itself does not act on 0x20.
+                ESP_LOGD(TAG, "Etch-a-Sketch get frame request (0x20) received; ignoring on client");
+                break;
+            case MSG_TYPE_ETCH_UPDATE_FRAME:
+                process_etch_update_frame(payload, header.length);
                 break;
             default:
-                ESP_LOGW(TAG, "Unknown shared view message type: 0x%02X", header.type);
+                ESP_LOGW(TAG, "Unknown etch-a-sketch message type: 0x%02X", header.type);
                 break;
         }
     }
@@ -453,20 +464,17 @@ static void process_current_weather(const uint8_t *payload, uint8_t payload_len)
         return;
     }
     
-    // Get actual temperature (with offset removed)
-    int8_t actual_temp = mqtt_protocol_get_actual_temp(weather.temperature);
-    
-    // Prepare payload for weather module (API 0 = current weather)
+    // Pass raw temperature value with offset to weather view
+    // Weather view will handle offset removal
     uint8_t weather_payload[1];
-    weather_payload[0] = (uint8_t)actual_temp;  // Weather module expects actual temp
+    weather_payload[0] = weather.temperature;
     
-    ESP_LOGI(TAG, "Updating current weather: %d°F", actual_temp);
     Weather__Update_values(0, weather_payload, 1);
 }
-static void process_shared_view_frame(const uint8_t *payload, uint8_t payload_len) {
-    mqtt_shared_view_frame_t frame;
-    if (mqtt_protocol_parse_shared_view_frame(payload, payload_len, &frame) != 0) {
-        ESP_LOGE(TAG, "Failed to parse shared view frame");
+static void process_etch_update_frame(const uint8_t *payload, uint8_t payload_len) {
+    mqtt_etch_sketch_frame_t frame;
+    if (mqtt_protocol_parse_etch_update_frame(payload, payload_len, &frame) != 0) {
+        ESP_LOGE(TAG, "Failed to parse etch-a-sketch frame");
         return;
     }
     Etchsketch__Apply_remote_frame(&frame);

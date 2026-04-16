@@ -101,7 +101,7 @@ void Provisioning_View__UI_Button(uint8_t btn) {
             ESP_LOGI(TAG, "User exiting SoftAP mode");
             user_action_taken = 1;
             in_softap_mode = 0;
-            View__Set_view(VIEW_MENU);
+            View__Set_view(VIEW_WEATHER);
         }
     } else {
         // In prompt mode - allow starting provisioning or continuing offline
@@ -116,8 +116,8 @@ void Provisioning_View__UI_Button(uint8_t btn) {
         } else if (btn == 3) {  // Button 4 - Continue offline
             ESP_LOGI(TAG, "User chose to continue offline");
             user_action_taken = 1;  // Set flag
-            // Return to menu view
-            View__Set_view(VIEW_MENU);
+            // Return to weather view
+            View__Set_view(VIEW_WEATHER);
         }
     }
 }

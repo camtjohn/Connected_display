@@ -57,7 +57,7 @@ const uint8_t sprite_full_moon[4] = {6, 15, 15, 6};    //dim: 4x4
 
 // Custom
 const uint8_t sprite_vert_line[4] = {1, 1, 1, 1};    //dim: 4x1
-
+const uint8_t sprite_horiz_line[1] = {3};      //dim: 1x2
 
 
 // PRIVATE METHOD PROTOTYPES

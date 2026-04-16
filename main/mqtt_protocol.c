@@ -38,8 +38,7 @@ int mqtt_protocol_parse_current_weather(const uint8_t *payload, uint8_t payload_
     
     weather->temperature = payload[0];
     
-    int8_t actual_temp = mqtt_protocol_get_actual_temp(weather->temperature);
-    ESP_LOGI(TAG, "Current weather: temp=%d°F (raw=0x%02X)", actual_temp, weather->temperature);
+    ESP_LOGI(TAG, "Current weather: raw temp=0x%02X", weather->temperature);
     
     return 0;
 }
@@ -112,10 +111,6 @@ int mqtt_protocol_parse_version(const uint8_t *payload, uint8_t payload_len,
     ESP_LOGI(TAG, "Version: %u", version->version);
 
     return 0;
-}
-
-int8_t mqtt_protocol_get_actual_temp(uint8_t temp_with_offset) {
-    return (int8_t)(temp_with_offset - TEMP_OFFSET);
 }
 
 int mqtt_protocol_build_device_config(const char **strings, uint8_t num_strings,
@@ -231,27 +226,27 @@ int mqtt_protocol_build_heartbeat(const char *device_name, uint8_t *buffer, uint
     return total_len;
 }
 
-int mqtt_protocol_build_shared_view_request(uint8_t *buffer, uint8_t buffer_size) {
+int mqtt_protocol_build_etch_get_frame(uint8_t *buffer, uint8_t buffer_size) {
     if (buffer == NULL || buffer_size < MQTT_PROTOCOL_HEADER_SIZE) {
-        ESP_LOGE(TAG, "Invalid buffer for shared view request");
+        ESP_LOGE(TAG, "Invalid buffer for etch get frame request");
         return -1;
     }
 
-    buffer[0] = MSG_TYPE_SHARED_VIEW_REQ;
+    buffer[0] = MSG_TYPE_ETCH_GET_FRAME;
     buffer[1] = 0;  // no payload
     return MQTT_PROTOCOL_HEADER_SIZE;
 }
 
-int mqtt_protocol_parse_shared_view_frame(const uint8_t *payload, uint8_t payload_len,
-                                          mqtt_shared_view_frame_t *frame) {
+int mqtt_protocol_parse_etch_update_frame(const uint8_t *payload, uint8_t payload_len,
+                                          mqtt_etch_sketch_frame_t *frame) {
     if (payload == NULL || frame == NULL) {
-        ESP_LOGE(TAG, "NULL pointer passed to parse_shared_view_frame");
+        ESP_LOGE(TAG, "NULL pointer passed to parse_etch_update_frame");
         return -1;
     }
 
     const uint8_t expected_len = 2 + sizeof(frame->red) + sizeof(frame->green) + sizeof(frame->blue);
     if (payload_len < expected_len) {
-        ESP_LOGE(TAG, "Shared view payload too short: %d (expected %d)", payload_len, expected_len);
+        ESP_LOGE(TAG, "Etch sketch payload too short: %d (expected %d)", payload_len, expected_len);
         return -1;
     }
 
@@ -262,4 +257,34 @@ int mqtt_protocol_parse_shared_view_frame(const uint8_t *payload, uint8_t payloa
     memcpy(frame->green, payload + 2 + sizeof(frame->red), sizeof(frame->green));
     memcpy(frame->blue, payload + 2 + sizeof(frame->red) + sizeof(frame->green), sizeof(frame->blue));
     return 0;
+}
+
+int mqtt_protocol_build_etch_update_frame(const mqtt_etch_sketch_frame_t *frame,
+                                          uint8_t *buffer, uint8_t buffer_size) {
+    if (frame == NULL || buffer == NULL) {
+        ESP_LOGE(TAG, "NULL pointer passed to build_etch_update_frame");
+        return -1;
+    }
+
+    const uint8_t payload_len = 2 + sizeof(frame->red) + sizeof(frame->green) + sizeof(frame->blue);
+    const uint16_t total_len = MQTT_PROTOCOL_HEADER_SIZE + payload_len;
+    if (buffer_size < total_len) {
+        ESP_LOGE(TAG, "Buffer too small for etch update frame: %d (required %d)", buffer_size, total_len);
+        return -1;
+    }
+
+    // Header
+    buffer[0] = MSG_TYPE_ETCH_UPDATE_FRAME;
+    buffer[1] = payload_len;
+
+    // Payload
+    uint8_t *payload = &buffer[MQTT_PROTOCOL_HEADER_SIZE];
+    payload[0] = (uint8_t)(frame->seq >> 8);
+    payload[1] = (uint8_t)(frame->seq & 0xFF);
+
+    memcpy(payload + 2, frame->red, sizeof(frame->red));
+    memcpy(payload + 2 + sizeof(frame->red), frame->green, sizeof(frame->green));
+    memcpy(payload + 2 + sizeof(frame->red) + sizeof(frame->green), frame->blue, sizeof(frame->blue));
+
+    return total_len;
 }

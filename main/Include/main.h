@@ -2,8 +2,10 @@
 #define MAIN_H
 
 // Firmware version compiled into this binary
-#define FW_VERSION_NUM 1
+#define FW_VERSION_NUM 4
 
+// Debug build flag - uncomment to use debug topics
+// #define DEBUG_BUILD
 
 #include "freertos/FreeRTOS.h"
 #include "event_system.h"

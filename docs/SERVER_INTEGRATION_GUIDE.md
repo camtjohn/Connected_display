@@ -237,10 +237,10 @@ Binary Message:
 
 ### 4. Shared View Messages (Collaborative Drawing)
 
-#### 4a. Shared View Request
+#### 4a. Etch Get Frame Request
 **Direction:** Device → Server (or Device ↔ Device via broker)  
-**Topic:** `shared_view` (production) or `debug_shared_view` (debug)  
-**Message Type:** `0x20` (MSG_TYPE_SHARED_VIEW_REQ)
+**Topic:** `etch_sketch` (production) or `debug_etch_sketch` (debug)  
+**Message Type:** `0x20` (MSG_TYPE_ETCH_GET_FRAME)
 
 **Format:**
 ```
@@ -251,10 +251,10 @@ Binary Message:
 
 ---
 
-#### 4b. Shared View Frame (Full Update)
+#### 4b. Etch Update Frame (Full Update)
 **Direction:** Server/Device → Devices  
-**Topic:** `shared_view`  
-**Message Type:** `0x21` (MSG_TYPE_SHARED_VIEW_FRAME)
+**Topic:** `etch_sketch`  
+**Message Type:** `0x21` (MSG_TYPE_ETCH_UPDATE_FRAME)
 
 **Format:**
 ```
@@ -295,9 +295,9 @@ Binary Message (abbreviated):
 
 ---
 
-#### 4c. Shared View Updates (Incremental)
+#### 4c. Etch Sketch Updates (Incremental)
 **Direction:** Server/Device → Devices  
-**Topic:** `shared_view`  
+**Topic:** `etch_sketch`  
 **Message Type:** `0x22` (MSG_TYPE_SHARED_VIEW_UPDATES)
 
 **Format:**
@@ -332,7 +332,7 @@ Binary Message:
 
 **Synchronization:**
 - Devices track last received sequence number
-- If sequence gap detected (seq != last_seq + 1), device sends Shared View Request
+- If sequence gap detected (seq != last_seq + 1), device sends Etch Get Frame Request
 - Server/publisher responds with full frame (0x21)
 
 ---
@@ -347,7 +347,7 @@ Binary Message:
 | `dev_bootup` | Device → Server | Device registration (0x03) | 1 |
 | `dev_heartbeat` | Device → Server | Periodic heartbeat (future) | 0 |
 | `device_offline` | Device → Server | LWT message (future) | 1 |
-| `shared_view` | Bidirectional | Shared canvas (0x20, 0x21, 0x22) | 0 |
+| `etch_sketch` | Bidirectional | Shared canvas (0x20, 0x21, 0x22) | 0 |
 | `debug` | Device → Server | Debug messages (text) | 1 |
 
 ### Debug Topics (DEBUG_BUILD flag enabled)
@@ -357,7 +357,7 @@ All production topics prefixed with `debug_`:
 - `debug_dev_bootup`
 - `debug_dev_heartbeat`
 - `debug_device_offline`
-- `debug_shared_view`
+- `debug_etch_sketch`
 - `debug_test_msg`
 
 **Server Implementation Note:** Support both production and debug topic schemes for development/testing environments.
@@ -543,8 +543,8 @@ client.disconnect()
 | Forecast Weather | 0x02 | MSG_TYPE_FORECAST_WEATHER | Server → Device | 1 + (3×days) |
 | Device Config | 0x03 | MSG_TYPE_DEVICE_CONFIG | Device → Server | Variable |
 | Version | 0x10 | MSG_TYPE_VERSION | Server → Device | 1 byte |
-| Shared View Request | 0x20 | MSG_TYPE_SHARED_VIEW_REQ | Bidirectional | 0 bytes |
-| Shared View Frame | 0x21 | MSG_TYPE_SHARED_VIEW_FRAME | Bidirectional | 98 bytes |
+| Etch Get Frame | 0x20 | MSG_TYPE_ETCH_GET_FRAME | Bidirectional | 0 bytes |
+| Etch Update Frame | 0x21 | MSG_TYPE_ETCH_UPDATE_FRAME | Bidirectional | 98 bytes |
 | Shared View Updates | 0x22 | MSG_TYPE_SHARED_VIEW_UPDATES | Bidirectional | 3 + (3×count) |
 
 ### Temperature Encoding

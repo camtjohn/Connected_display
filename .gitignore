@@ -3,9 +3,11 @@ sdkconfig.old
 .vscode/
 main/.cproject
 build/
+/tools/provision_display/*.bin
  
 tools/mqtt_debugger/payloads/*
 tools/ssh_vm/id_ed25519_windows_to_vm
+tools/view_creator/
 
 # TLS certificates/keys
 *.crt

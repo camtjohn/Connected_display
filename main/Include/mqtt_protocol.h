@@ -20,8 +20,8 @@
 #define MSG_TYPE_DEVICE_CONFIG      0x03
 #define MSG_TYPE_VERSION            0x10
 #define MSG_TYPE_HEARTBEAT          0x11
-#define MSG_TYPE_SHARED_VIEW_REQ    0x20
-#define MSG_TYPE_SHARED_VIEW_FRAME  0x21
+#define MSG_TYPE_ETCH_GET_FRAME     0x20
+#define MSG_TYPE_ETCH_UPDATE_FRAME  0x21
 
 
 // Protocol Constants
@@ -93,7 +93,7 @@ typedef struct {
     uint16_t red[16];
     uint16_t green[16];
     uint16_t blue[16];
-} mqtt_shared_view_frame_t;
+} mqtt_etch_sketch_frame_t;
 
 typedef struct {
     uint8_t row : 4;      // 4-bit row (0-15)
@@ -145,14 +145,6 @@ int mqtt_protocol_parse_version(const uint8_t *payload, uint8_t payload_len,
                                 mqtt_version_t *version);
 
 /**
- * @brief Get actual temperature from current weather with offset
- * 
- * @param temp_with_offset Temperature value from message (uint8)
- * @return Actual temperature in °F (can be negative)
- */
-int8_t mqtt_protocol_get_actual_temp(uint8_t temp_with_offset);
-
-/**
  * @brief Build device config message with multiple variable-length strings
  * Encodes strings as: [num_strings][str1_len][str1][str2_len][str2]...
  * 
@@ -175,9 +167,11 @@ int mqtt_protocol_build_device_config(const char **strings, uint8_t num_strings,
  */
 int mqtt_protocol_build_heartbeat(const char *device_name, uint8_t *buffer, uint8_t buffer_size);
 
-int mqtt_protocol_build_shared_view_request(uint8_t *buffer, uint8_t buffer_size);
-int mqtt_protocol_parse_shared_view_frame(const uint8_t *payload, uint8_t payload_len,
-                                          mqtt_shared_view_frame_t *frame);
+int mqtt_protocol_build_etch_get_frame(uint8_t *buffer, uint8_t buffer_size);
+int mqtt_protocol_parse_etch_update_frame(const uint8_t *payload, uint8_t payload_len,
+                                          mqtt_etch_sketch_frame_t *frame);
+int mqtt_protocol_build_etch_update_frame(const mqtt_etch_sketch_frame_t *frame,
+                                          uint8_t *buffer, uint8_t buffer_size);
 int mqtt_protocol_build_shared_view_updates(const mqtt_shared_pixel_update_t *updates, uint8_t num_updates,
                                             uint16_t seq,
                                             uint8_t *buffer, uint8_t buffer_size);

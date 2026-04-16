@@ -1,8 +1,10 @@
 key,type,encoding,value
 device_cfg,namespace,,
 ca_cert,file,binary,C:\Personal\Connected_display\tools\provision_display\certs_to_provision\ca.crt
-client_cert,file,binary,C:\Personal\Connected_display\tools\provision_display\certs_to_provision\dev99.crt
-client_key,file,binary,C:\Personal\Connected_display\tools\provision_display\certs_to_provision\dev99.key
-name,data,string,dev02
+client_cert,file,binary,C:\Personal\Connected_display\tools\provision_display\certs_to_provision\dev02.crt
+client_key,file,binary,C:\Personal\Connected_display\tools\provision_display\certs_to_provision\dev02.key
+wifi_ssid,data,string,Loveshack
+wifi_password,data,string,Babyloveshack
+name,data,string,dev01
 zipcode,data,string,60607
-user_name,data,string,testeroo
+user_name,data,string,Cabuna

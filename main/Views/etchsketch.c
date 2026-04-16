@@ -28,7 +28,7 @@ static uint8_t Position_col;
 static uint8_t Paint_mode_active;      // 0=off, 1=paint with button, 2=paint with button2, 3=paint with button3
 static pixel_color_t Paint_color;      // color for painting
 
-static mqtt_shared_view_frame_t shared_view;
+static mqtt_etch_sketch_frame_t shared_view;
 
 #define FLUSH_TIMER_PERIOD_MS 2000  // 2 seconds of inactivity triggers flush
 static uint16_t Last_seq_seen;
@@ -56,6 +56,7 @@ static void request_full_sync(void);
 
 // PUBLIC METHODS
 
+// Initialize the Etchsketch view
 void Etchsketch__Initialize(void) {
     memset(&shared_view, 0, sizeof(shared_view));
 
@@ -106,6 +107,7 @@ void Etchsketch__Initialize(void) {
     }
 }
 
+// When navigate from another view into etch view
 void Etchsketch__On_Enter(void) {
     // Use live broker connection status; ignore stale server-activity flag
     if (Mqtt__Is_connected()) {
@@ -211,7 +213,7 @@ void Etchsketch__UI_Button_Released(uint8_t btn) {
     }
 }
 
-void Etchsketch__Apply_remote_frame(const mqtt_shared_view_frame_t *frame) {
+void Etchsketch__Apply_remote_frame(const mqtt_etch_sketch_frame_t *frame) {
     if (!frame || !Shared_comm_active) return;
     Last_seq_seen = frame->seq;
     
@@ -235,9 +237,9 @@ void Etchsketch__Apply_remote_frame(const mqtt_shared_view_frame_t *frame) {
 static void request_full_sync(void) {
     if (!Shared_comm_active) return;
     uint8_t buffer[MQTT_PROTOCOL_HEADER_SIZE];
-    int len = mqtt_protocol_build_shared_view_request(buffer, sizeof(buffer));
+    int len = mqtt_protocol_build_etch_get_frame(buffer, sizeof(buffer));
     if (len > 0) {
-        Mqtt__Publish(MQTT_TOPIC_SHARED_VIEW, buffer, len);
+        Mqtt__Publish(MQTT_TOPIC_ETCH_SKETCH, buffer, len);
     }
 }
 
@@ -277,11 +279,17 @@ static void flush_pending(void) {
         return;
     }
     // Prepare frame with sequence number
-    mqtt_shared_view_frame_t frame_to_send = shared_view;
+    mqtt_etch_sketch_frame_t frame_to_send = shared_view;
     frame_to_send.seq = Next_seq_to_send;
-    
-    // Publish full view
-    Mqtt__Publish(MQTT_TOPIC_SHARED_VIEW, (uint8_t *)&frame_to_send, sizeof(frame_to_send));
+
+    // Build header + payload for full frame (0x21)
+    uint8_t msg[MQTT_PROTOCOL_HEADER_SIZE + 2 + sizeof(frame_to_send.red) + sizeof(frame_to_send.green) + sizeof(frame_to_send.blue)];
+    int total_len = mqtt_protocol_build_etch_update_frame(&frame_to_send, msg, sizeof(msg));
+    if (total_len > 0) {
+        Mqtt__Publish(MQTT_TOPIC_ETCH_SKETCH, msg, total_len);
+    } else {
+        ESP_LOGE(TAG, "Failed to build etch update frame for publish");
+    }
     Next_seq_to_send++;
     
     // Stop the flush batching timer since we've sent

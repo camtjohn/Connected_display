@@ -16,6 +16,6 @@ void Etchsketch__UI_Button_Released(uint8_t);
 
 // Shared view inline API
 void Etchsketch__Request_full_sync(void);
-void Etchsketch__Apply_remote_frame(const mqtt_shared_view_frame_t *frame);
+void Etchsketch__Apply_remote_frame(const mqtt_etch_sketch_frame_t *frame);
 
 #endif

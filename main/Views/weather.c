@@ -5,6 +5,7 @@
 #include "view.h"
 #include "sprite.h"
 #include "local_time.h"
+#include "mqtt_protocol.h"
 
 static const char *TAG = "WEATHER_STATION: WEATHER";
 
@@ -46,13 +47,23 @@ void Weather__Update_values(uint8_t api, uint8_t* payload, uint8_t payload_len) 
     uint8_t update_view = 0;
     // Current temp
     if(api==0) {
-        update_view = update_stored_value(&Weather_today.current_temp, payload[0]);
+
+        // Remove offset from raw temperature value
+        int8_t actual_temp = (int8_t)(payload[0] - TEMP_OFFSET);
+        // Use absolute value if negative to avoid overflow
+        uint8_t display_temp = (actual_temp < 0) ? (uint8_t)(-actual_temp) : (uint8_t)actual_temp;
+        
+        update_view = update_stored_value(&Weather_today.current_temp, display_temp);
         // If current temp records higher than forecast max temp, update max
-        if(Weather_today.current_temp > Weather_today.max_temp) {
-            Weather_today.max_temp = Weather_today.current_temp;
-            update_view = 1;    // could be current temp just received did not update, but need update max
+        // Only check if positive temp (avoid issues with negative temps)
+        if (payload[0] >= TEMP_OFFSET) {
+            if(Weather_today.current_temp > Weather_today.max_temp) {
+                Weather_today.max_temp = Weather_today.current_temp;
+                update_view = 1;    // could be current temp just received did not update, but need update max
+            }
         }
-        ESP_LOGI(TAG, "current temp: %d", Weather_today.current_temp);
+
+        ESP_LOGI(TAG, "current temp: ", display_temp);
 
 
     // Forecast
