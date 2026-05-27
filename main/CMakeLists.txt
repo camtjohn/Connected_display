@@ -16,11 +16,13 @@ idf_component_register(
 	"ui.c"
 	"wifi.c"
 	"ota.c"
+	"text_renderer.c"
 	"Views/view.c"
 	"Views/menu.c"
 	"Views/conway.c"
 	"Views/weather.c"
 	"Views/etchsketch.c"
+	"Views/music.c"
 	"Views/provisioning_view.c"
 	"Views/bootup_view.c"
                     

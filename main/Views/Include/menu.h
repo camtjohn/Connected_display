@@ -8,6 +8,7 @@ typedef enum {
     MENU_VIEW_WEATHER = 0,
     MENU_VIEW_CONWAY,
     MENU_VIEW_ETCHSKETCH,
+    MENU_VIEW_MUSIC,
     NUM_MENU_VIEWS
 } Menu_view_type;
 

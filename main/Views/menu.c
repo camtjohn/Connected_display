@@ -35,6 +35,15 @@ const uint16_t image_etchsketch_blue[16] = {0x0000, 0x0000, 0x0000, 0x0000, 0x00
 const uint16_t image_etchsketch_green[16] = {0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
                                             0x0000, 0x0810, 0x1428, 0x0810, 0x0000, 0x0000, 0x0000, 0x0000};
 
+const uint16_t image_music_red[16] = {0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+                                        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000};
+
+const uint16_t image_music_green[16] = {0x0000, 0x0000, 0x0000, 0x07FC, 0x060C, 0x060C, 0x060C, 0x060C, 
+                                        0x060C, 0x1E3C, 0x3E7C, 0x3E7C, 0x1C38, 0x0000, 0x0000, 0x0000};
+
+const uint16_t image_music_blue[16] = {0x0000, 0x0000, 0x0FFE, 0x0FFE, 0x0FFE, 0x0F1E, 0x0F1E, 0x0F1E, 
+                                        0x3F7E, 0x7FFE, 0x7FFE, 0x7FFE, 0x7FFE, 0x3E7C, 0x0000, 0x0000};
+
 // Private method prototypes
 
 // PUBLIC METHODS
@@ -59,6 +68,9 @@ void Menu__Get_view(view_frame_t *frame) {
         case MENU_VIEW_ETCHSKETCH:
             view_to_display = VIEW_ETCHSKETCH;
             break;
+        case MENU_VIEW_MUSIC:
+            view_to_display = VIEW_MUSIC;
+            break;
         default:
             view_to_display = VIEW_WEATHER;
             break;
@@ -80,6 +92,11 @@ void Menu__Get_view(view_frame_t *frame) {
         memcpy(frame->green, image_etchsketch_green, sizeof(frame->green));
         memcpy(frame->blue, image_etchsketch_blue, sizeof(frame->blue));
         break;
+    case VIEW_MUSIC:
+        memcpy(frame->red, image_music_red, sizeof(frame->red));
+        memcpy(frame->green, image_music_green, sizeof(frame->green));
+        memcpy(frame->blue, image_music_blue, sizeof(frame->blue));
+        break;
     default:
         break;
     }
@@ -95,6 +112,8 @@ View_type Menu__Get_current_view(void) {
             return VIEW_CONWAY;
         case MENU_VIEW_ETCHSKETCH:
             return VIEW_ETCHSKETCH;
+        case MENU_VIEW_MUSIC:
+            return VIEW_MUSIC;
         default:
             return VIEW_WEATHER;
     }

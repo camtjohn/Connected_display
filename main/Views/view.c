@@ -20,6 +20,7 @@
 #include "weather.h"
 #include "conway.h"
 #include "etchsketch.h"
+#include "music.h"
 #include "provisioning_view.h"
 #include "bootup_view.h"
 
@@ -77,6 +78,7 @@ void View__Initialize() {
     Weather__Initialize();
     Conway__Initialize();
     Etchsketch__Initialize();
+    Music__Initialize();
     Provisioning_View__Initialize();
     Bootup_View__Initialize();
 
@@ -241,6 +243,30 @@ void View__Process_UI(uint16_t UI_event) {
             }
         }
         break;
+    case VIEW_MUSIC:
+        // Buttons
+        if(UI_event & 0x02) {   //btn2
+            Music__UI_Button(1);
+        }
+        if(UI_event & 0x04) {   //btn3
+            Music__UI_Button(2);
+        }
+        if(UI_event & 0x08) {   //btn4
+            Music__UI_Button(3);
+        }
+        //enc1
+        if(UI_event & 0x10) {
+            Music__UI_Encoder_Top(0);
+        } else if(UI_event & 0x20) {
+            Music__UI_Encoder_Top(1);
+        }
+        //enc2
+        if(UI_event & 0x40) {
+            Music__UI_Encoder_Side(0);
+        } else if(UI_event & 0x80) {
+            Music__UI_Encoder_Side(1);
+        }
+        break;
     case VIEW_PROVISIONING:
         // Buttons
         if(UI_event & 0x01) {   //btn0 - Start SoftAP
@@ -331,6 +357,10 @@ void build_new_view(void) {
     case VIEW_ETCHSKETCH:
         View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
         Etchsketch__Get_view(&View_frame);
+        break;
+    case VIEW_MUSIC:
+        View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
+        Music__Get_view(&View_frame);
         break;
     case VIEW_PROVISIONING:
         View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
