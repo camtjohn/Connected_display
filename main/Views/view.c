@@ -66,6 +66,112 @@ void decrease_brightness(void);
 void increase_brightness(void);
 void post_event(event_type_t, uint32_t);
 
+typedef void (*view_render_fn)(view_frame_t *frame);
+typedef void (*view_init_fn)(void);
+typedef void (*view_button_fn)(uint8_t btn);
+typedef void (*view_encoder_fn)(uint8_t direction);
+typedef void (*view_enter_fn)(void);
+typedef uint32_t (*view_refresh_fn)(void);
+
+typedef struct {
+    view_init_fn initialize;
+    view_render_fn render;
+    view_button_fn on_button;
+    view_button_fn on_button_released;
+    view_encoder_fn on_encoder_top;
+    view_encoder_fn on_encoder_side;
+    view_enter_fn on_enter;
+    uint32_t fixed_refresh_ms;
+    view_refresh_fn get_refresh_ms;
+    uint8_t button_map_down[4];
+    uint8_t button_map_up[4];
+    uint8_t use_menu_toggle_on_btn1;
+} view_module_t;
+
+static const view_module_t *get_current_module(void);
+static void process_module_buttons(const view_module_t *module, uint16_t UI_event, uint8_t is_button_up);
+static void process_module_encoders(const view_module_t *module, uint16_t UI_event);
+static void switch_between_menu_and_selected_view(void);
+
+static const view_module_t View_modules[NUM_MAIN_VIEWS] = {
+    [VIEW_MENU] = {
+        .initialize = Menu__Initialize,
+        .render = Menu__Get_view,
+        .on_button = Menu__UI_Button,
+        .on_encoder_top = Menu__UI_Encoder_Top,
+        .on_encoder_side = Menu__UI_Encoder_Side,
+        .fixed_refresh_ms = DEFAULT_REFRESH_RATE_MS,
+        .button_map_down = {0, 1, 2, 3},
+        .button_map_up = {0, 0, 0, 0},
+        .use_menu_toggle_on_btn1 = 1,
+    },
+    [VIEW_WEATHER] = {
+        .initialize = Weather__Initialize,
+        .render = Weather__Get_view,
+        .on_button = Weather__UI_Button,
+        .on_encoder_top = Weather__UI_Encoder_Top,
+        .on_encoder_side = Weather__UI_Encoder_Side,
+        .fixed_refresh_ms = DEFAULT_REFRESH_RATE_MS,
+        .button_map_down = {0, 1, 2, 3},
+        .button_map_up = {0, 0, 0, 0},
+        .use_menu_toggle_on_btn1 = 1,
+    },
+    [VIEW_CONWAY] = {
+        .initialize = Conway__Initialize,
+        .render = Conway__Get_frame,
+        .on_button = Conway__UI_Button,
+        .on_encoder_top = Conway__UI_Encoder_Top,
+        .on_encoder_side = Conway__UI_Encoder_Side,
+        .get_refresh_ms = Conway__Get_refresh_rate_ms,
+        .button_map_down = {0, 1, 2, 3},
+        .button_map_up = {0, 0, 0, 0},
+        .use_menu_toggle_on_btn1 = 1,
+    },
+    [VIEW_ETCHSKETCH] = {
+        .initialize = Etchsketch__Initialize,
+        .render = Etchsketch__Get_view,
+        .on_button = Etchsketch__UI_Button,
+        .on_button_released = Etchsketch__UI_Button_Released,
+        .on_encoder_top = Etchsketch__UI_Encoder_Top,
+        .on_encoder_side = Etchsketch__UI_Encoder_Side,
+        .on_enter = Etchsketch__On_Enter,
+        .fixed_refresh_ms = DEFAULT_REFRESH_RATE_MS,
+        .button_map_down = {0, 1, 2, 3},
+        .button_map_up = {0, 1, 2, 3},
+        .use_menu_toggle_on_btn1 = 1,
+    },
+    [VIEW_MUSIC] = {
+        .initialize = Music__Initialize,
+        .render = Music__Get_view,
+        .on_button = Music__UI_Button,
+        .on_encoder_top = Music__UI_Encoder_Top,
+        .on_encoder_side = Music__UI_Encoder_Side,
+        .fixed_refresh_ms = DEFAULT_REFRESH_RATE_MS,
+        .button_map_down = {0, 1, 2, 3},
+        .button_map_up = {0, 0, 0, 0},
+        .use_menu_toggle_on_btn1 = 1,
+    },
+    [VIEW_PROVISIONING] = {
+        .initialize = Provisioning_View__Initialize,
+        .render = Provisioning_View__Get_frame,
+        .on_button = Provisioning_View__UI_Button,
+        .on_encoder_top = Provisioning_View__UI_Encoder_Top,
+        .on_encoder_side = Provisioning_View__UI_Encoder_Side,
+        .fixed_refresh_ms = DEFAULT_REFRESH_RATE_MS,
+        .button_map_down = {1, 0, 0, 3},
+        .button_map_up = {0, 0, 0, 0},
+        .use_menu_toggle_on_btn1 = 0,
+    },
+    [VIEW_BOOTUP] = {
+        .initialize = Bootup_View__Initialize,
+        .render = Bootup_View__Get_frame,
+        .fixed_refresh_ms = 500,
+        .button_map_down = {0, 0, 0, 0},
+        .button_map_up = {0, 0, 0, 0},
+        .use_menu_toggle_on_btn1 = 1,
+    },
+};
+
 // PUBLIC METHODS
 
 void View__Initialize() {
@@ -74,13 +180,11 @@ void View__Initialize() {
     Brightness = LEVEL_MIN;
     View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
 
-    Menu__Initialize();
-    Weather__Initialize();
-    Conway__Initialize();
-    Etchsketch__Initialize();
-    Music__Initialize();
-    Provisioning_View__Initialize();
-    Bootup_View__Initialize();
+    for (uint8_t i = 0; i < NUM_MAIN_VIEWS; i++) {
+        if (View_modules[i].initialize) {
+            View_modules[i].initialize();
+        }
+    }
 
     displayUpdateSemaphore = xSemaphoreCreateBinary();
 
@@ -102,201 +206,25 @@ void View__Initialize() {
 // - BUTTON_UP:   bits 0-3 = button 1-4, bit 8 = 1 (0x100)
 // - ENCODER:     bits 4-7 = encoder events (0x10, 0x20 for top; 0x40, 0x80 for side)
 void View__Process_UI(uint16_t UI_event) {
-    // Check if this is a button UP event using bit 8
     uint8_t button_bits = (UI_event & 0x0F);
     uint8_t is_button_up = (button_bits != 0) && (UI_event & 0x100);
-    
-    // Skip BUTTON_UP events for most views
-    // Only etchsketch will handle UP events (to exit paint mode)
-    if (is_button_up && View_current_view != VIEW_ETCHSKETCH) {
-        // This is a BUTTON_UP event - ignore for menu, weather, conway
+    const view_module_t *module = get_current_module();
+
+    if (!module) {
         return;
     }
-    
-    // First button: switch between menu and a module view (button DOWN only)
-    // Exception: provisioning view uses btn0 for its own handler
-    if((UI_event & 0x01) && !is_button_up && View_current_view != VIEW_PROVISIONING) {
-        if (View_current_view == VIEW_MENU) {
-            View_current_view = Menu__Get_current_view();
-            build_new_view();
-            Led_driver__Update_RAM(&View_frame);  // immediate refresh on view change
-            // On entering etchsketch view, request sync
-            if (View_current_view == VIEW_ETCHSKETCH) {
-                Etchsketch__On_Enter();
-            }
-        } else {
-            View_current_view = VIEW_MENU;
-            build_new_view();
-            Led_driver__Update_RAM(&View_frame);  // immediate refresh on view change
-        }
-        return;  // Return early to prevent view-specific handlers from running
+
+    // First button toggles menu for views that opt-in (button DOWN only).
+    if((UI_event & 0x01) && !is_button_up && module->use_menu_toggle_on_btn1) {
+        switch_between_menu_and_selected_view();
+        return;
     }
 
-    switch(View_current_view) {
-    case VIEW_MENU:
-        // Buttons
-        if(UI_event & 0x02) {   //btn2
-            Menu__UI_Button(1);
-        }
-        if(UI_event & 0x04) {   //btn3
-            Menu__UI_Button(2);
-        }
-        if(UI_event & 0x08) {   //btn4
-            Menu__UI_Button(3);
-        }
-        //enc1
-        if(UI_event & 0x10) {
-            Menu__UI_Encoder_Top(0);
-        } else if(UI_event & 0x20) {
-            Menu__UI_Encoder_Top(1);
-        }
-        //enc2
-        if(UI_event & 0x40) {
-            Menu__UI_Encoder_Side(0);
-        } else if(UI_event & 0x80) {
-            Menu__UI_Encoder_Side(1);
-        }
-        break;
-    case VIEW_WEATHER:
-        // Buttons
-        if(UI_event & 0x02) {   //btn2
-            Weather__UI_Button(1);
-        }
-        if(UI_event & 0x04) {   //btn3
-            Weather__UI_Button(2);
-        }
-        if(UI_event & 0x08) {   //btn4
-            Weather__UI_Button(3);
-        }
-        //enc1
-        if(UI_event & 0x10) {
-            Weather__UI_Encoder_Top(0);
-        } else if(UI_event & 0x20) {
-            Weather__UI_Encoder_Top(1);
-        }
-        //enc2
-        if(UI_event & 0x40) {
-            Weather__UI_Encoder_Side(0);
-        } else if(UI_event & 0x80) {
-            Weather__UI_Encoder_Side(1);
-        }
-        break;
-    case VIEW_CONWAY:
-        // Buttons
-        if(UI_event & 0x02) {   //btn2
-            Conway__UI_Button(1);
-        }
-        if(UI_event & 0x04) {   //btn3
-            Conway__UI_Button(2);
-        }
-        if(UI_event & 0x08) {   //btn4
-            Conway__UI_Button(3);
-        }
-        //enc1
-        if(UI_event & 0x10) {
-            Conway__UI_Encoder_Top(0);
-        } else if(UI_event & 0x20) {
-            Conway__UI_Encoder_Top(1);
-        }
-        //enc2
-        if(UI_event & 0x40) {
-            Conway__UI_Encoder_Side(0);
-        } else if(UI_event & 0x80) {
-            Conway__UI_Encoder_Side(1);
-        }
-        break;
-    case VIEW_ETCHSKETCH:
-        if (is_button_up) {
-            // Handle button release events for paint mode
-            if(UI_event & 0x02) {   // btn2 released
-                Etchsketch__UI_Button_Released(1);
-            }
-            if(UI_event & 0x04) {   // btn3 released
-                Etchsketch__UI_Button_Released(2);
-            }
-            if(UI_event & 0x08) {   // btn4 released
-                Etchsketch__UI_Button_Released(3);
-            }
-        } else {
-            // Handle button press and encoder events (as before)
-            // Buttons
-            if(UI_event & 0x02) {   //btn2
-                Etchsketch__UI_Button(1);
-            }
-            if(UI_event & 0x04) {   //btn3
-                Etchsketch__UI_Button(2);
-            }
-            if(UI_event & 0x08) {   //btn4
-                Etchsketch__UI_Button(3);
-            }
-            //enc1
-            if(UI_event & 0x10) {
-                Etchsketch__UI_Encoder_Top(0);
-            } else if(UI_event & 0x20) {
-                Etchsketch__UI_Encoder_Top(1);
-            }
-            //enc2
-            if(UI_event & 0x40) {
-                Etchsketch__UI_Encoder_Side(0);
-            } else if(UI_event & 0x80) {
-                Etchsketch__UI_Encoder_Side(1);
-            }
-        }
-        break;
-    case VIEW_MUSIC:
-        // Buttons
-        if(UI_event & 0x02) {   //btn2
-            Music__UI_Button(1);
-        }
-        if(UI_event & 0x04) {   //btn3
-            Music__UI_Button(2);
-        }
-        if(UI_event & 0x08) {   //btn4
-            Music__UI_Button(3);
-        }
-        //enc1
-        if(UI_event & 0x10) {
-            Music__UI_Encoder_Top(0);
-        } else if(UI_event & 0x20) {
-            Music__UI_Encoder_Top(1);
-        }
-        //enc2
-        if(UI_event & 0x40) {
-            Music__UI_Encoder_Side(0);
-        } else if(UI_event & 0x80) {
-            Music__UI_Encoder_Side(1);
-        }
-        break;
-    case VIEW_PROVISIONING:
-        // Buttons
-        if(UI_event & 0x01) {   //btn0 - Start SoftAP
-            Provisioning_View__UI_Button(1);
-        }
-        if(UI_event & 0x08) {   //btn3 - Continue offline
-            Provisioning_View__UI_Button(3);
-        }
-        //enc1
-        if(UI_event & 0x10) {
-            Provisioning_View__UI_Encoder_Top(0);
-        } else if(UI_event & 0x20) {
-            Provisioning_View__UI_Encoder_Top(1);
-        }
-        //enc2
-        if(UI_event & 0x40) {
-            Provisioning_View__UI_Encoder_Side(0);
-        } else if(UI_event & 0x80) {
-            Provisioning_View__UI_Encoder_Side(1);
-        }
-        break;
-    case VIEW_BOOTUP:
-        // Bootup view ignores all UI events
-        break;
-    case NUM_MAIN_VIEWS:
-    default:
-        break;
+    process_module_buttons(module, UI_event, is_button_up);
+
+    if (!is_button_up) {
+        process_module_encoders(module, UI_event);
     }
-    
-    UI_event = 0;
 
     xSemaphoreGive(displayUpdateSemaphore);
 }
@@ -341,37 +269,80 @@ void build_new_view(void) {
     // Clear view
     memset(&View_frame, 0, sizeof(View_frame));
 
-    // Assemble sprite array according to requested view and values
-    switch (View_current_view) {
-    case VIEW_MENU:
+    const view_module_t *module = get_current_module();
+    if (!module) {
+        return;
+    }
+
+    if (module->render) {
+        module->render(&View_frame);
+    }
+
+    if (module->get_refresh_ms) {
+        View_refresh_rate_ms = module->get_refresh_ms();
+    } else if (module->fixed_refresh_ms > 0) {
+        View_refresh_rate_ms = module->fixed_refresh_ms;
+    } else {
         View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
-        Menu__Get_view(&View_frame);
-        break;
-    case VIEW_WEATHER:
-        View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
-        Weather__Get_view(&View_frame);
-        break;
-    case VIEW_CONWAY:
-        View_refresh_rate_ms = Conway__Get_frame(&View_frame);
-        break;
-    case VIEW_ETCHSKETCH:
-        View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
-        Etchsketch__Get_view(&View_frame);
-        break;
-    case VIEW_MUSIC:
-        View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
-        Music__Get_view(&View_frame);
-        break;
-    case VIEW_PROVISIONING:
-        View_refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
-        Provisioning_View__Get_frame(&View_frame);
-        break;
-    case VIEW_BOOTUP:
-        View_refresh_rate_ms = 500;  // Update every 500ms for animation effect
-        Bootup_View__Get_frame(&View_frame);
-        break;
-    default:
-        break;
+    }
+}
+
+static const view_module_t *get_current_module(void) {
+    if (View_current_view >= NUM_MAIN_VIEWS) {
+        return NULL;
+    }
+    return &View_modules[View_current_view];
+}
+
+static void process_module_buttons(const view_module_t *module, uint16_t UI_event, uint8_t is_button_up) {
+    uint8_t button_bits = (UI_event & 0x0F);
+    const uint8_t *button_map = is_button_up ? module->button_map_up : module->button_map_down;
+    view_button_fn callback = is_button_up ? module->on_button_released : module->on_button;
+
+    if (!button_bits || !callback) {
+        return;
+    }
+
+    for (uint8_t i = 0; i < 4; i++) {
+        uint8_t bit = (1 << i);
+        uint8_t mapped_button = button_map[i];
+        if ((button_bits & bit) && mapped_button) {
+            callback(mapped_button);
+        }
+    }
+}
+
+static void process_module_encoders(const view_module_t *module, uint16_t UI_event) {
+    if (module->on_encoder_top) {
+        if(UI_event & 0x10) {
+            module->on_encoder_top(0);
+        } else if(UI_event & 0x20) {
+            module->on_encoder_top(1);
+        }
+    }
+
+    if (module->on_encoder_side) {
+        if(UI_event & 0x40) {
+            module->on_encoder_side(0);
+        } else if(UI_event & 0x80) {
+            module->on_encoder_side(1);
+        }
+    }
+}
+
+static void switch_between_menu_and_selected_view(void) {
+    if (View_current_view == VIEW_MENU) {
+        View_current_view = Menu__Get_current_view();
+    } else {
+        View_current_view = VIEW_MENU;
+    }
+
+    build_new_view();
+    Led_driver__Update_RAM(&View_frame);
+
+    const view_module_t *module = get_current_module();
+    if (module && module->on_enter) {
+        module->on_enter();
     }
 }
 

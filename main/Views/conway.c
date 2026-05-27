@@ -30,7 +30,7 @@ void Conway__Initialize(void) {
 }
 
 // Update view arrays with new conway frame
-uint16_t Conway__Get_frame(view_frame_t *frame) {    
+void Conway__Get_frame(view_frame_t *frame) {
     // Copy new conway grid to views Red=Alive, Blue=Just died, Green=Just born
     for(uint8_t row=0; row<CONWAY_GRID_SIZE; row++) {
         for(uint8_t col=0; col<CONWAY_GRID_SIZE; col++) {
@@ -65,6 +65,9 @@ uint16_t Conway__Get_frame(view_frame_t *frame) {
         restart_grid();
     }
 
+}
+
+uint32_t Conway__Get_refresh_rate_ms(void) {
     return Refresh_rate;
 }
 
