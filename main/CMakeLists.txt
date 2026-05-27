@@ -23,6 +23,7 @@ idf_component_register(
 	"Views/weather.c"
 	"Views/etchsketch.c"
 	"Views/music.c"
+	"Views/ble_sensor_view.c"
 	"Views/provisioning_view.c"
 	"Views/bootup_view.c"
                     

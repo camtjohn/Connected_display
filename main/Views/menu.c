@@ -44,6 +44,16 @@ const uint16_t image_music_green[16] = {0x0000, 0x0000, 0x0000, 0x07FC, 0x060C, 
 const uint16_t image_music_blue[16] = {0x0000, 0x0000, 0x0FFE, 0x0FFE, 0x0FFE, 0x0F1E, 0x0F1E, 0x0F1E, 
                                         0x3F7E, 0x7FFE, 0x7FFE, 0x7FFE, 0x7FFE, 0x3E7C, 0x0000, 0x0000};
 
+const uint16_t image_ble_red[16] = {
+    0x0000, 0x0100, 0x0180, 0x0140, 0x0120, 0x0110, 0x0188, 0x0144,
+    0x0144, 0x0188, 0x0110, 0x0120, 0x0140, 0x0180, 0x0100, 0x0000};
+const uint16_t image_ble_green[16] = {
+    0x0000, 0x0000, 0x0800, 0x0400, 0x0200, 0x0100, 0x0080, 0x0040,
+    0x0040, 0x0080, 0x0100, 0x0200, 0x0400, 0x0800, 0x0000, 0x0000};
+const uint16_t image_ble_blue[16] = {
+    0x0000, 0x0000, 0x0000, 0x2000, 0x1000, 0x0800, 0x0400, 0x0200,
+    0x0200, 0x0400, 0x0800, 0x1000, 0x2000, 0x0000, 0x0000, 0x0000};
+
 // Private method prototypes
 
 // PUBLIC METHODS
@@ -71,6 +81,9 @@ void Menu__Get_view(view_frame_t *frame) {
         case MENU_VIEW_MUSIC:
             view_to_display = VIEW_MUSIC;
             break;
+        case MENU_VIEW_BLE_SENSOR:
+            view_to_display = VIEW_BLE_SENSOR;
+            break;
         default:
             view_to_display = VIEW_WEATHER;
             break;
@@ -97,6 +110,11 @@ void Menu__Get_view(view_frame_t *frame) {
         memcpy(frame->green, image_music_green, sizeof(frame->green));
         memcpy(frame->blue, image_music_blue, sizeof(frame->blue));
         break;
+    case VIEW_BLE_SENSOR:
+        memcpy(frame->red, image_ble_red, sizeof(frame->red));
+        memcpy(frame->green, image_ble_green, sizeof(frame->green));
+        memcpy(frame->blue, image_ble_blue, sizeof(frame->blue));
+        break;
     default:
         break;
     }
@@ -114,6 +132,8 @@ View_type Menu__Get_current_view(void) {
             return VIEW_ETCHSKETCH;
         case MENU_VIEW_MUSIC:
             return VIEW_MUSIC;
+        case MENU_VIEW_BLE_SENSOR:
+            return VIEW_BLE_SENSOR;
         default:
             return VIEW_WEATHER;
     }

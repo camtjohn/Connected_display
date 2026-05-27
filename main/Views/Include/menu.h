@@ -9,6 +9,7 @@ typedef enum {
     MENU_VIEW_CONWAY,
     MENU_VIEW_ETCHSKETCH,
     MENU_VIEW_MUSIC,
+    MENU_VIEW_BLE_SENSOR,
     NUM_MENU_VIEWS
 } Menu_view_type;
 

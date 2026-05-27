@@ -21,6 +21,7 @@
 #include "conway.h"
 #include "etchsketch.h"
 #include "music.h"
+#include "Include/ble_sensor_view.h"
 #include "provisioning_view.h"
 #include "bootup_view.h"
 
@@ -147,6 +148,17 @@ static const view_module_t View_modules[NUM_MAIN_VIEWS] = {
         .on_encoder_top = Music__UI_Encoder_Top,
         .on_encoder_side = Music__UI_Encoder_Side,
         .fixed_refresh_ms = DEFAULT_REFRESH_RATE_MS,
+        .button_map_down = {0, 1, 2, 3},
+        .button_map_up = {0, 0, 0, 0},
+        .use_menu_toggle_on_btn1 = 1,
+    },
+    [VIEW_BLE_SENSOR] = {
+        .initialize = Ble_Sensor_View__Initialize,
+        .render = Ble_Sensor_View__Get_frame,
+        .on_button = Ble_Sensor_View__UI_Button,
+        .on_encoder_top = Ble_Sensor_View__UI_Encoder_Top,
+        .on_encoder_side = Ble_Sensor_View__UI_Encoder_Side,
+        .get_refresh_ms = Ble_Sensor_View__Get_refresh_rate_ms,
         .button_map_down = {0, 1, 2, 3},
         .button_map_up = {0, 0, 0, 0},
         .use_menu_toggle_on_btn1 = 1,
